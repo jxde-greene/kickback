@@ -39,3 +39,5 @@ Each phone referees its own player: it reads hits from its gun, tracks health, l
 ## Protocol notes
 
 `parseTelemetry`, `commandBytes` and `weaponConfigBytes` in `index.html` implement the Lazer Swarm wiki's Recoil Bluetooth protocol. The app never sends the bootloader command.
+
+ 
