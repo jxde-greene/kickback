@@ -1,54 +1,87 @@
 # Kickback
 
-Hubless laser tag for Recoil (Skyrocket) blasters. One web page; Android plays in Chrome, iPhone plays in the free **Bluefy** browser. No official hub, no official app.
+**Play it: [jxde-greene.github.io/kickback](https://jxde-greene.github.io/kickback/)**
 
-Each phone referees its own player: it reads hits from its gun, tracks health, locks the gun on death and runs the respawn timer. The network only shares deaths, hit markers and the lobby, so a dropped connection never stops anyone's game.
+Laser tag for Skyrocket **Recoil** blasters, with no hub and no official app. Open one web page on each player's phone, connect your blaster over Bluetooth and play. Android and iPhone can play in the same game.
 
-## Put it online (5 minutes, free)
+Kickback isn't made by or affiliated with Skyrocket. Recoil is their trademark.
 
-1. Create a GitHub repo (e.g. `kickback`) and upload `index.html`.
-2. Repo **Settings → Pages → Source: Deploy from a branch → main / root → Save**.
-3. After a minute your game lives at `https://<your-username>.github.io/kickback/`. HTTPS is required for Web Bluetooth; GitHub Pages provides it.
+## What you need
 
-## Each player
+- Recoil blasters (rifles and pistols) and, if you have them, Recoil grenades
+- One phone per player:
+  - **Android:** Chrome
+  - **iPhone:** the free **Bluefy** browser from the App Store (Safari can't use Bluetooth)
+- An internet connection to host or join a game. There's also a no-network mode.
 
-- **Android:** open the link in Chrome.
-- **iPhone:** install Bluefy (App Store), open the link inside Bluefy.
-- Enter a name, turn the gun on, tap **Connect gun**. The gun kicks once when it's yours. If it doesn't appear in the list, use **Show all devices**.
-- Mount the phone, keep the screen on, earbuds optional.
+## Getting started
 
-## Playing
+1. Open the link above (in Bluefy on iPhone).
+2. Enter your name.
+3. Turn your blaster on and tap **Connect gun**. The blaster kicks once when it's paired to your phone. If it isn't in the list, tap **Show all devices**.
+4. Mount the phone or keep it in a pocket. The screen stays on during a match. Earbuds help in a loud game.
 
-- **Host a game** gives a 4-letter room code; everyone else taps **Join**. Host sets the rules and taps **Start**.
-- **Play with no network** works anywhere: every phone picks a different gun number (and the same team setup), then starts together. Scores stay per phone.
-- In game: reload button starts a reload (2 s pistol, 2.5 s rifle by default; host can change it). The gun can't fire until it's done. Thumb button cycles fire mode. **IR** button cycles Outdoor / Hybrid / Indoor for your own gun when you cross a doorway.
-- Grenades: frag style by default: one heavy hit (8 damage, leaving you at 2 health) per grenade to everyone in range, no matter how long the grenade keeps spraying. Host can change damage and the blast window.
-- Feedback: gunshot, hit, reload and hit-marker sounds; red screen flash with a red edge on the side you were hit; heartbeat and pulsing red border at low health; death screen with respawn countdown; blue spawn shield; kill streak and lead-change callouts; one-minute warning and final countdown.
-- **Sound & feel** card (setup screen): volume, voice callouts on/off, gun kick when hit on/off, and a Test sounds button.
+To try the app without a blaster, tap **Simulated gun**.
 
-## First test (do this before a real match)
+## Starting a match
 
-1. **Gun Lab tab**, one gun: confirm live telemetry updates, battery shows, and *Recoil kick* / *Muzzle flash* work.
-2. Two guns: shoot gun B with gun A. Gun B's *Last hits* should show `shooter` = gun A's ID.
-3. Tune Hybrid: in *Weapon config*, try close-cone values (`08`, `20`, `40`) shooting through a doorway and point-blank. Tell me the value you like and I'll make it the default.
-4. Two phones, **Host** + **Join**, short match. Then put one phone in airplane mode for a minute and turn it back on: scores should match afterward.
+- **Host a game** gives you a 4-letter room code. Everyone else types it in and taps **Join**. The host sets the rules and taps **Start match**.
+- **Play with no network** works anywhere. Every phone picks a different gun number and the same team setup, then everyone starts together. Each phone keeps its own score.
 
-## Status (v0.9)
+### Rules the host can set
 
-- Protocol bytes match the Lazer Swarm wiki. Tested with simulated guns: hosting, joining, tagging, respawn, grenades, and score resync after a phone drops off the network. **Nothing has been tested on real guns or real phones yet.** Step 1 above will surface any surprises fast.
-- The lobby uses a free public MQTT relay over the internet (HiveMQ, with Mosquitto and EMQX as fallbacks). It works through cell data and home Wi-Fi. It's public, so anyone who guessed your room code could see game messages; harmless for laser tag.
-- Not built yet: base-QR respawn, end-of-game QR score merge, host hand-off if the host's phone leaves.
+- Free-for-all or team deathmatch (Blue vs Red)
+- Arena: Outdoor, Indoor, or Hybrid (house plus yard)
+- Time limit and kill limit
+- Health, respawn time and reload time
+- Spawn shield, friendly fire and hit-marker sounds
+- Grenade damage and blast length
 
-## If something doesn't work on a phone
+## During a match
 
-- The version tag next to the logo should say **v0.9**. If it says "failed", a red bar at the bottom explains why: screenshot it.
-- **Gun Lab → Diagnostics** lists what the browser supports and the gun's connection state. Screenshot it when reporting a problem.
+- **Health** is the ring around the screen. It's green, and turns red when you're nearly out.
+- **Ammo** is the big number in the middle, with one orange bar per round underneath.
+- **Reload:** press the blaster's reload button. The blaster can't fire until the reload finishes.
+- **Fire mode:** tap Single, Burst or Auto on screen, or press the blaster's thumb button to cycle. Auto is for rifles only.
+- **Infrared:** tap Out, Hybrid or In to change your blaster's range when you move between indoors and outdoors.
+- **Grenades** hit everyone in range once with heavy damage.
+- When you're tagged out, the screen counts down to your respawn.
 
-## Files
+You'll also get sound, screen flashes and voice callouts. Sounds cover shots, hits, reloads and kills. When you're hit, the screen flashes red on the side the shot came from. Voice callouts announce kill streaks, lead changes and the last minute. The **Sound and feel** card on the start screen sets the volume and turns voice callouts and the hit kick on or off.
 
-- `index.html`: the file to upload; this is the game.
-- `index.src.html`, `build.py`, `vendor/`: readable source. Fonts (Big Shoulders Display, Barlow; SIL Open Font License) are embedded in `index.html`. `python3 build.py` builds `index.html` (needs esbuild). The network library is built into `index.html`, so the page needs no outside downloads.
+## How it works
 
-## Protocol notes
+Each phone referees its own player. It reads hits from its blaster, tracks health, locks the blaster when you're tagged out and runs the respawn timer. Phones only share deaths, hit markers and the lobby, through a free public relay (HiveMQ, with Mosquitto and EMQX as backups). If a phone drops off the network, its game keeps going and the scores catch up when it reconnects.
 
-`parseTelemetry`, `commandBytes` and `weaponConfigBytes` in `index.html` implement the Lazer Swarm wiki's Recoil Bluetooth protocol. The app never sends the bootloader command.
+The relay is public, so anyone who guessed your room code could see your game's messages. That's harmless for laser tag, but don't use it for anything private.
+
+## Troubleshooting
+
+- **Buttons do nothing, or the page is stuck loading:**
+  - Check the version tag next to the logo.
+  - If it says "failed", a red bar at the bottom of the screen explains why.
+  - On iPhone, make sure you're in Bluefy and not Safari.
+- **The blaster won't show up:**
+  - Turn it off and on again, then tap **Show all devices**.
+  - Make sure Bluetooth is on and the browser is allowed to use it.
+- **Can't join a game:** check the room code with the host. The lobby needs internet, either cell data or Wi-Fi.
+- **No sound on iPhone:** tap any button once. Sound then plays even with the silent switch on.
+- **Lab tab:** shows live data from your blaster and a Diagnostics box. Screenshot the Diagnostics box when reporting a problem.
+
+## Known limitations
+
+- There's no host hand-off yet. If the host's phone leaves, the others keep playing, but only the host can end the match early.
+- In no-network mode, each phone only knows its own deaths and the kills it was told about.
+
+## For developers
+
+- `index.html` is the whole app. It's built from `index.src.html` with `python3 build.py`, which needs [esbuild](https://esbuild.github.io/).
+- The build compiles the script for older Safari versions, then embeds the network library and fonts so the page needs no outside downloads.
+- To host your own copy, upload `index.html` to a GitHub repo and turn on GitHub Pages (Settings, then Pages, then deploy from the main branch). Web Bluetooth needs HTTPS, which GitHub Pages provides.
+- The Recoil Bluetooth protocol comes from the Lazer Swarm community's wiki. `parseTelemetry`, `commandBytes` and `weaponConfigBytes` in the source implement it. The app never sends the bootloader command.
+
+## Credits
+
+- Recoil protocol research: the Lazer Swarm community
+- [MQTT.js](https://github.com/mqttjs/MQTT.js) (MIT licence) for networking
+- Barlow and Barlow Condensed fonts by Jeremy Tribby (SIL Open Font License, in `vendor/fonts`)
