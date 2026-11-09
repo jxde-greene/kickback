@@ -250,7 +250,10 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.45 ui-monospace,Menlo,
 #fx .lowhp{left:0;top:0;right:0;bottom:0;box-shadow:inset 0 0 90px 26px rgba(239,83,80,.55)}
 body.lowhp #fx .lowhp{animation:pulse 1.1s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.2}50%{opacity:.95}}
-#fx .deadtint{display:none}
+#fx .hurt{left:0;top:0;right:0;bottom:0;background:radial-gradient(ellipse at center,rgba(239,83,80,0) 45%,rgba(239,83,80,.55) 100%);box-shadow:inset 0 0 70px 10px rgba(239,83,80,.5);transition:opacity .35s ease-out}
+#fx .deadtint{left:0;top:0;right:0;bottom:0;background:radial-gradient(ellipse at center,rgba(239,83,80,.22) 20%,rgba(239,83,80,.75) 100%);box-shadow:inset 0 0 110px 30px rgba(239,83,80,.6);transition:opacity .25s}
+body.dead #fx .deadtint{opacity:1}
+body.dead #fx .hurt{opacity:0!important}
 #fx .heal{left:0;top:0;right:0;bottom:0;background:radial-gradient(ellipse at center,rgba(84,201,133,.04) 30%,rgba(84,201,133,.45) 100%)}
 #fx .marker{left:50%;top:38%;width:76px;height:76px;margin:-38px 0 0 -38px}
 #fx .marker:before,#fx .marker:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:7px;margin-left:-3.5px;background:var(--ink);border-radius:4px;box-shadow:0 0 0 2px var(--bg),0 0 12px rgba(241,240,235,.4)}
@@ -281,7 +284,7 @@ body.shield #fx .shield{opacity:1}
 <noscript><div style="background:#8a1414;color:#fff;padding:14px;font:16px -apple-system,sans-serif">JavaScript is turned off in this browser, so Kickback can't run. Turn JavaScript on in the browser's settings.</div></noscript>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <filter id="ringGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="ringGlow" filterUnits="userSpaceOnUse" x="-20" y="-20" width="308" height="308"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     <symbol id="i-tag" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></symbol>
     <symbol id="i-gren" viewBox="0 0 24 24"><circle cx="11" cy="14" r="7"/><path d="M14 7l3-3M17 4l3 1M16 8h3"/></symbol>
     <symbol id="i-out" viewBox="0 0 24 24"><path d="M5 11a7 7 0 0 1 14 0v4l-2 1v3H7v-3l-2-1z"/></symbol>
@@ -493,7 +496,7 @@ body.shield #fx .shield{opacity:1}
   </div>
 </section>
 
-<div id="fx"><i class="deadtint"></i><i class="lowhp"></i><i class="shield"></i><i class="hitflash"></i><i class="dir-f"></i><i class="dir-l"></i><i class="dir-r"></i><i class="dir-b"></i><i class="heal"></i><i class="marker"></i></div>
+<div id="fx"><i class="deadtint"></i><i class="hurt"></i><i class="lowhp"></i><i class="shield"></i><i class="hitflash"></i><i class="dir-f"></i><i class="dir-l"></i><i class="dir-r"></i><i class="dir-b"></i><i class="heal"></i><i class="marker"></i></div>
 <div class="toast" id="toast"></div>
 
 <script id="kbMain">
@@ -1804,6 +1807,10 @@ body.shield #fx .shield{opacity:1}
     if (G.phase === "ended") return;
     G.phase = "ended";
     G.endedGame = G.gameId;
+    {
+      const h = document.querySelector("#fx .hurt");
+      if (h) h.style.opacity = "0";
+    }
     cancelReload();
     gun && gun.lock(G.myId);
     document.body.classList.remove("dead", "lowhp", "shield");
@@ -2053,6 +2060,9 @@ body.shield #fx .shield{opacity:1}
       else el.removeAttribute("filter");
     });
     $("#hpRing").setAttribute("aria-label", "Health " + Math.max(0, G.health) + " of " + max);
+    const lost = G.alive && G.phase === "playing" ? Math.max(0, Math.min(1, (max - G.health) / Math.max(1, max - 1))) : 0;
+    const hurt = document.querySelector("#fx .hurt");
+    if (hurt) hurt.style.opacity = lost ? (0.15 + 0.85 * Math.pow(lost, 1.3)).toFixed(2) : "0";
   }
   function renderHud() {
     $("#hud").classList.toggle("cd", G.phase === "countdown");
