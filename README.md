@@ -30,7 +30,7 @@ Each phone referees its own player: it reads hits from its gun, tracks health, l
 3. Tune Hybrid: in *Weapon config*, try close-cone values (`08`, `20`, `40`) shooting through a doorway and point-blank. Tell me the value you like and I'll make it the default.
 4. Two phones, **Host** + **Join**, short match. Then put one phone in airplane mode for a minute and turn it back on: scores should match afterward.
 
-## Status (v0.2)
+## Status (v0.4)
 
 - Protocol bytes match the Lazer Swarm wiki. Tested with simulated guns: hosting, joining, tagging, respawn, grenades, and score resync after a phone drops off the network. **Nothing has been tested on real guns or real phones yet.** Step 1 above will surface any surprises fast.
 - The lobby uses a free public MQTT relay over the internet (HiveMQ, with Mosquitto and EMQX as fallbacks). It works through cell data and home Wi-Fi. It's public, so anyone who guessed your room code could see game messages; harmless for laser tag.
@@ -38,13 +38,13 @@ Each phone referees its own player: it reads hits from its gun, tracks health, l
 
 ## If something doesn't work on a phone
 
-- The version tag next to the logo should say **v0.2**. If it's stuck on "loading…", the script didn't run; a red bar at the bottom shows why.
+- The version tag next to the logo should say **v0.4**. If it's stuck on "loading…", the script didn't run; a red bar at the bottom shows why.
 - **Gun Lab → Diagnostics** lists what the browser supports and the gun's connection state. Screenshot it when reporting a problem.
 
 ## Files
 
 - `index.html`: the file to upload; this is the game.
-- `index.src.html` + `build.py`: readable source. `python3 build.py` compiles it into `index.html` for older iPhones (needs esbuild).
+- `index.src.html`, `build.py`, `vendor/`: readable source. `python3 build.py` builds `index.html` (needs esbuild). The network library is built into `index.html`, so the page needs no outside downloads.
 
 ## Protocol notes
 
