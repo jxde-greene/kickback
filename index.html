@@ -144,7 +144,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
 <header>
   <span class="net" id="netDot" title="network"></span>
   <h1>KICK<b>BACK</b></h1>
-  <span id="ver">v0.7 loading…</span>
+  <span id="ver">v0.8 loading…</span>
   <nav class="tabs">
     <button data-tab="play" class="on">Play</button>
     <button data-tab="lab">Gun Lab</button>
@@ -340,7 +340,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
 <script id="kbMain">
 "use strict";
 (() => {
-  const VERSION = "v0.7";
+  const VERSION = "v0.8";
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
   const esc = (s) => String(s != null ? s : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -1029,7 +1029,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && G.phase !== "setup") keepAwake();
   });
-  const DEFAULTS = { mode: "ffa", arena: "hybrid", time: 10, kills: 15, health: 10, respawn: 10, gren: 10, ff: false, marker: true, reload: 2, shield: 3, grenWin: 0 };
+  const DEFAULTS = { mode: "ffa", arena: "hybrid", time: 10, kills: 15, health: 10, respawn: 10, gren: 8, ff: false, marker: true, reload: 2, shield: 3, grenWin: 0 };
   const me = { cid: store.get("cid", null) || Math.random().toString(36).slice(2, 10), name: store.get("name", "") };
   store.set("cid", me.cid);
   const G = {
@@ -1041,7 +1041,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     hostCid: null,
     roster: [],
     // {cid, name, gun, id, team}
-    settings: { ...DEFAULTS, ...store.get("settings7", {}) },
+    settings: { ...DEFAULTS, ...store.get("settings8", {}) },
     gameId: null,
     startAt: 0,
     endAt: 0,
@@ -1445,14 +1445,17 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     toast("IR set to " + IR_MODES[G.irMode].label);
   }
   function onHit(h) {
+    const now = performance.now();
+    if (h.grenade && h.msg === 1) {
+      const b = G.blasts[h.gid] || (G.blasts[h.gid] = { first: -1e9, last: -1e9, hitAt: -1e9 });
+      if (now - b.last > 6e3 && now - b.first > 5e4) b.first = now;
+      b.last = now;
+    }
     if (!G.alive) return;
     if (Date.now() < (G.shieldUntil || 0)) return;
-    const now = performance.now();
     if (h.grenade) {
       if (h.msg !== 1) return;
-      const b = G.blasts[h.gid] || (G.blasts[h.gid] = { first: 0, last: 0, hitAt: 0 });
-      if (now - b.last > 6e3) b.first = now;
-      b.last = now;
+      const b = G.blasts[h.gid];
       const win = (G.settings.grenWin === void 0 ? 0 : G.settings.grenWin) * 1e3;
       if (win === 0 ? b.hitAt >= b.first : now - b.first > win) return;
       if (now - b.hitAt < 1500) return;
@@ -1801,7 +1804,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
       shield: n("#s-shield", 0, 10, 3),
       grenWin: n("#s-grenwin", 0, 45, 3)
     };
-    store.set("settings7", G.settings);
+    store.set("settings8", G.settings);
     if (G.host) publishRoster();
     renderLobby();
   }
