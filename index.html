@@ -5,6 +5,32 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101317">
 <title>Kickback</title>
+<script>
+/* Error reporter: runs first, so if anything later breaks on a phone, the reason shows on screen. */
+(function(){
+  function show(msg){
+    try{
+      var b = document.getElementById("errBar");
+      if (!b){
+        b = document.createElement("div"); b.id = "errBar";
+        b.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:999;background:#8a1414;color:#fff;font:13px/1.35 -apple-system,system-ui,sans-serif;padding:10px 12px 22px;white-space:pre-wrap;word-break:break-word";
+        b.onclick = function(){ b.style.display = "none"; };
+        (document.body || document.documentElement).appendChild(b);
+      }
+      b.style.display = "block";
+      b.textContent = "Kickback error (screenshot this, tap to hide):\n" + msg;
+    }catch(e){}
+  }
+  window.kbShowError = show;
+  window.addEventListener("error", function(e){
+    if (e && e.message === "Script error.") return;            // cross-origin library noise
+    show((e.message || "error") + "  @" + String(e.filename || "").split("/").pop() + ":" + (e.lineno || "") + ":" + (e.colno || ""));
+  });
+  window.addEventListener("unhandledrejection", function(e){
+    var r = e && e.reason; show("Promise: " + (r && r.message ? r.message : String(r)));
+  });
+})();
+</script>
 <style>
 :root{
   --bg:#101317; --panel:#191e25; --line:#2a313b; --ink:#eef2f6; --quiet:#94a0ae;
@@ -24,7 +50,10 @@ header h1 b{color:var(--accent)}
 section{display:none} section.on{display:block}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
 .card h2{font-size:15px;margin:0 0 10px;color:var(--quiet);text-transform:uppercase;letter-spacing:.8px}
-button{font:inherit;color:var(--ink);background:#232a33;border:1px solid var(--line);border-radius:10px;padding:12px 16px;cursor:pointer}
+button{font:inherit;color:var(--ink);background:#232a33;border:1px solid var(--line);border-radius:10px;padding:12px 16px;cursor:pointer;touch-action:manipulation;-webkit-appearance:none;appearance:none;-webkit-user-select:none;user-select:none}
+#ver{font-size:11px;color:var(--quiet)}
+.msg{font-size:14px;margin-top:8px;min-height:0}
+.msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
 button:active{transform:scale(.98)}
 button.big{width:100%;padding:16px;font-size:18px;font-weight:600;margin-top:8px}
 button.primary{background:var(--accent);color:#111;border-color:var(--accent)}
@@ -64,7 +93,7 @@ td.n,th.n{text-align:right}
 pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,monospace;background:#0d1014;border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;max-height:260px;overflow:auto}
 .flash{animation:fl .25s}
 @keyframes fl{from{background:#5a1010}to{background:var(--bg)}}
-.toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));background:#2b323c;border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:none;z-index:20}
+.toast{position:fixed;left:16px;right:16px;top:calc(60px + env(safe-area-inset-top));background:#2b323c;border:1px solid var(--accent);border-radius:12px;padding:14px;font-size:16px;display:none;z-index:20;pointer-events:none;box-shadow:0 6px 24px #0008}
 .toast.on{display:block}
 .sim button{padding:10px 8px;font-size:14px}
 </style>
@@ -73,6 +102,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
 <header>
   <span class="net" id="netDot" title="network"></span>
   <h1>KICK<b>BACK</b></h1>
+  <span id="ver">v0.2 loading…</span>
   <nav class="tabs">
     <button data-tab="play" class="on">Play</button>
     <button data-tab="lab">Gun Lab</button>
@@ -97,6 +127,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
         <button id="btnConnectAll">Show all devices</button>
         <button id="btnSim">Use simulated gun</button>
       </div>
+      <div class="msg" id="gunMsg"></div>
       <p class="muted" id="bleHint"></p>
     </div>
     <div class="card">
@@ -198,6 +229,11 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     <div id="labStatus" class="muted">Connect a gun on the Play tab first.</div>
   </div>
   <div class="card">
+    <h2>Diagnostics</h2>
+    <pre id="diag">--</pre>
+    <p class="muted">If something isn't working, screenshot this box.</p>
+  </div>
+  <div class="card">
     <h2>Live telemetry</h2>
     <pre id="labRaw">--</pre>
     <pre id="labParsed">--</pre>
@@ -245,585 +281,1010 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
 <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
 <script>
 "use strict";
-/* =====================================================================
-   Kickback — hubless laser tag for Recoil (Skyrocket) blasters.
-   Protocol per the Lazer Swarm wiki. Each phone referees its own player;
-   the network only carries death events, hit markers and the roster.
-   ===================================================================== */
-
-const $ = s => document.querySelector(s);
-const $$ = s => [...document.querySelectorAll(s)];
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const VERSION = "v0.2";
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const esc = (s) => String(s != null ? s : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const store = {
-  get(k, d){ try{ const v = localStorage.getItem("kb_" + k); return v === null ? d : JSON.parse(v); }catch{ return d; } },
-  set(k, v){ try{ localStorage.setItem("kb_" + k, JSON.stringify(v)); }catch{} }
+  get(k, d) {
+    try {
+      const v = localStorage.getItem("kb_" + k);
+      return v === null ? d : JSON.parse(v);
+    } catch {
+      return d;
+    }
+  },
+  set(k, v) {
+    try {
+      localStorage.setItem("kb_" + k, JSON.stringify(v));
+    } catch {
+    }
+  }
 };
 const logLines = [];
-function log(...a){
-  const line = new Date().toLocaleTimeString() + "  " + a.map(x => typeof x === "string" ? x : JSON.stringify(x)).join(" ");
-  logLines.unshift(line); logLines.length = Math.min(logLines.length, 80);
-  const el = $("#labLog"); if (el) el.textContent = logLines.join("\n");
+function log(...a) {
+  const line = (/* @__PURE__ */ new Date()).toLocaleTimeString() + "  " + a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ");
+  logLines.unshift(line);
+  logLines.length = Math.min(logLines.length, 80);
+  const el = $("#labLog");
+  if (el) el.textContent = logLines.join("\n");
   console.log(line);
 }
 let toastTimer;
-function toast(msg, ms = 2600){
-  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), ms);
+function toast(msg, ms = 2600) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), ms);
 }
-
-/* ============================ PROTOCOL ============================ */
 const UUID = {
   svc: "e6f59d10-8230-4a5c-b22f-c062b1d329e3",
-  id:  "e6f59d11-8230-4a5c-b22f-c062b1d329e3",
+  id: "e6f59d11-8230-4a5c-b22f-c062b1d329e3",
   tel: "e6f59d12-8230-4a5c-b22f-c062b1d329e3",
   cmd: "e6f59d13-8230-4a5c-b22f-c062b1d329e3",
   cfg: "e6f59d14-8230-4a5c-b22f-c062b1d329e3"
 };
-const CMD = { FIRE:0x01, RELOAD_START:0x02, RELOAD_FINISH:0x04, RECOIL:0x08, FLASH:0x10, POWER_OFF:0x20, SET_ID:0x80 };
-// Never send 0x100 (reboot to bootloader).
-
-function parseTelemetry(b){
-  const slot = o => {
-    const b8 = b[o], b9 = b[o+1], b10 = b[o+2];
+const CMD = { FIRE: 1, RELOAD_START: 2, RELOAD_FINISH: 4, RECOIL: 8, FLASH: 16, POWER_OFF: 32, SET_ID: 128 };
+function parseTelemetry(b) {
+  const slot = (o) => {
+    const b8 = b[o], b9 = b[o + 1], b10 = b[o + 2];
     if (b9 === 0 && b8 === 0) return null;
-    if (b9 === 0xA7) return { grenade:true, gid:b8 >> 4, msg:b8 & 0x0F, sensors:b10 >> 4 };
+    if (b9 === 167) return { grenade: true, gid: b8 >> 4, msg: b8 & 15, sensors: b10 >> 4 };
     const shooter = b9 >> 2;
     if (!shooter) return null;
-    return { grenade:false, shooter, shotId:b8 & 0x07, charge:(b8 >> 3) & 0x07,
-             profile:((b9 & 0x03) << 2) | (b8 >> 6), sensors:b10 >> 4 };
+    return {
+      grenade: false,
+      shooter,
+      shotId: b8 & 7,
+      charge: b8 >> 3 & 7,
+      profile: (b9 & 3) << 2 | b8 >> 6,
+      sensors: b10 >> 4
+    };
   };
   return {
-    ack: b[0] >> 4, counter: b[0] & 0x0F, playerId: b[1],
-    power: b[2] >> 4, buttons: b[2] & 0x0F,
-    reloadCount: b[3] >> 4, triggerCount: b[3] & 0x0F,
-    thumbCount: b[4] & 0x0F, powerCount: b[5] & 0x0F,
-    battery: b[6] | (b[7] << 8),
-    hit1: slot(8), hit2: slot(11), hitCounter: b[10] & 0x0F,
-    ammo: b[14], flags: b[15], reloadMode: !!(b[15] & 0x01), clipOff: !!(b[15] & 0x02),
-    state: b[16], profile: b[17]
+    ack: b[0] >> 4,
+    counter: b[0] & 15,
+    playerId: b[1],
+    power: b[2] >> 4,
+    buttons: b[2] & 15,
+    reloadCount: b[3] >> 4,
+    triggerCount: b[3] & 15,
+    thumbCount: b[4] & 15,
+    powerCount: b[5] & 15,
+    battery: b[6] | b[7] << 8,
+    hit1: slot(8),
+    hit2: slot(11),
+    hitCounter: b[10] & 15,
+    ammo: b[14],
+    flags: b[15],
+    reloadMode: !!(b[15] & 1),
+    clipOff: !!(b[15] & 2),
+    state: b[16],
+    profile: b[17]
   };
 }
-function pad20(bytes){ const v = new Uint8Array(20); v.set(bytes.slice(0, 20)); return v; }
-function commandBytes(cmdNibble, code, playerId, extra = []){
-  return pad20([(cmdNibble & 0x0F) << 4, 0x00, code & 0xFF, (code >> 8) & 0xFF, playerId & 0xFF, ...extra]);
+function pad20(bytes) {
+  const v = new Uint8Array(20);
+  v.set(bytes.slice(0, 20));
+  return v;
 }
-function weaponConfigBytes({ shots, rate, longIR, coneIR, flash = 0xFF, recoil = 0x80, profile = 0x00 }){
-  return pad20([profile, 0x00, 0x09, shots, rate, longIR, coneIR, flash, 0xFF, recoil, 0x01, 0x34]);
+function commandBytes(cmdNibble, code, playerId, extra = []) {
+  return pad20([(cmdNibble & 15) << 4, 0, code & 255, code >> 8 & 255, playerId & 255, ...extra]);
 }
-function feedbackConfigBytes(recoilOn){ return pad20([0x10, 0x00, 0x02, recoilOn ? 0x03 : 0x02, 0xFF]); }
-
+function weaponConfigBytes(o) {
+  const flash = o.flash === void 0 ? 255 : o.flash, recoil = o.recoil === void 0 ? 128 : o.recoil, profile = o.profile || 0;
+  return pad20([profile, 0, 9, o.shots, o.rate, o.longIR, o.coneIR, flash, 255, recoil, 1, 52]);
+}
+function feedbackConfigBytes(recoilOn) {
+  return pad20([16, 0, 2, recoilOn ? 3 : 2, 255]);
+}
 const IR_MODES = {
-  outdoor: { label:"Outdoor", longIR:0xFF, coneIR:0xC8 },
-  hybrid:  { label:"Hybrid",  longIR:0xFF, coneIR:0x08 },
-  indoor:  { label:"Indoor",  longIR:0x19, coneIR:0x00 }
+  outdoor: { label: "Outdoor", longIR: 255, coneIR: 200 },
+  hybrid: { label: "Hybrid", longIR: 255, coneIR: 8 },
+  indoor: { label: "Indoor", longIR: 25, coneIR: 0 }
 };
 const FIRE_MODES = {
-  single: { label:"Single", shots:0x01, rate:0x00 },
-  burst:  { label:"Burst",  shots:0x03, rate:0x03 },
-  auto:   { label:"Auto",   shots:0xFE, rate:0x01 }
+  single: { label: "Single", shots: 1, rate: 0 },
+  burst: { label: "Burst", shots: 3, rate: 3 },
+  auto: { label: "Auto", shots: 254, rate: 1 }
 };
-
-/* ============================ GUN (BLE) ============================ */
 class BaseGun {
-  constructor(){ this.listeners = new Set(); this.connected = false; this.type = "pistol"; this.prev = null; this.last = null; this.raw = null; }
-  on(fn){ this.listeners.add(fn); }
-  emit(ev){ for (const f of this.listeners) { try{ f(ev); }catch(e){ log("listener error", String(e)); } } }
-  handleTelemetry(bytes){
+  constructor() {
+    this.listeners = /* @__PURE__ */ new Set();
+    this.connected = false;
+    this.type = "pistol";
+    this.prev = null;
+    this.last = null;
+    this.raw = null;
+  }
+  on(fn) {
+    this.listeners.add(fn);
+  }
+  emit(ev) {
+    for (const f of this.listeners) {
+      try {
+        f(ev);
+      } catch (e) {
+        log("listener error", String(e));
+      }
+    }
+  }
+  handleTelemetry(bytes) {
     this.raw = bytes;
     const t = parseTelemetry(bytes), p = this.prev;
     this.last = t;
-    this.emit({ type:"tel", t, bytes });
-    if (p){
-      if (t.reloadCount !== p.reloadCount) this.emit({ type:"reloadPress" });
-      if (t.thumbCount !== p.thumbCount) this.emit({ type:"thumbPress" });
-      if (t.triggerCount !== p.triggerCount) this.emit({ type:"triggerPress", ammo:t.ammo });
-      if (t.ammo < p.ammo) this.emit({ type:"shot", ammo:t.ammo });
+    this.lastTelAt = Date.now();
+    if (!p && this.cmdId === 0) this.cmdId = t.ack;
+    this.emit({ type: "tel", t, bytes });
+    if (p) {
+      if (t.reloadCount !== p.reloadCount) this.emit({ type: "reloadPress" });
+      if (t.thumbCount !== p.thumbCount) this.emit({ type: "thumbPress" });
+      if (t.triggerCount !== p.triggerCount) this.emit({ type: "triggerPress", ammo: t.ammo });
+      if (t.ammo < p.ammo) this.emit({ type: "shot", ammo: t.ammo });
     }
-    for (const h of [t.hit1, t.hit2]) if (h) this.emit({ type:"hit", hit:h });
+    const slotKey = (b) => Array.prototype.slice.call(b, 8, 14).join(",");
+    const fresh = !p || t.hitCounter !== p.hitCounter || slotKey(bytes) !== this.prevSlots;
+    this.prevSlots = slotKey(bytes);
+    if (fresh) {
+      for (const h of [t.hit1, t.hit2]) if (h) this.emit({ type: "hit", hit: h });
+    }
     this.prev = t;
   }
-  // high-level helpers
-  setId(id){ return this.command(CMD.SET_ID, id); }
-  lock(id){ return this.command(CMD.RELOAD_START, id); }
-  load(id, shots, profile = 0){ return this.command(CMD.RELOAD_FINISH, id, [profile, Math.max(1, Math.min(255, shots))]); }
-  kick(id){ return this.command(CMD.RECOIL, id); }
-  flash(id){ return this.command(CMD.FLASH, id); }
-  powerOff(id){ return this.command(CMD.POWER_OFF, id); }
-  configure(fire, ir, recoil = 0x80){
-    return this.writeConfig(weaponConfigBytes({ shots:fire.shots, rate:fire.rate, longIR:ir.longIR, coneIR:ir.coneIR, recoil }));
+  batteryPct() {
+    if (!this.last) return null;
+    const scale = this.type === "rifle" ? 1.5 : 1;
+    const full = 4096 * scale, empty = 2944 * scale;
+    return Math.max(0, Math.min(100, Math.round((this.last.battery - empty) / (full - empty) * 100)));
   }
-  recoil(on){ return this.writeConfig(feedbackConfigBytes(on)); }
+  // high-level helpers
+  setId(id) {
+    return this.command(CMD.SET_ID, id);
+  }
+  lock(id) {
+    return this.command(CMD.RELOAD_START, id);
+  }
+  load(id, shots, profile = 0) {
+    return this.command(CMD.RELOAD_FINISH, id, [profile, Math.max(1, Math.min(255, shots))]);
+  }
+  kick(id) {
+    return this.command(CMD.RECOIL, id);
+  }
+  flash(id) {
+    return this.command(CMD.FLASH, id);
+  }
+  powerOff(id) {
+    return this.command(CMD.POWER_OFF, id);
+  }
+  configure(fire, ir, recoil = 128) {
+    return this.writeConfig(weaponConfigBytes({ shots: fire.shots, rate: fire.rate, longIR: ir.longIR, coneIR: ir.coneIR, recoil }));
+  }
+  recoil(on) {
+    return this.writeConfig(feedbackConfigBytes(on));
+  }
 }
-
 class BleGun extends BaseGun {
-  constructor(){ super(); this.device = null; this.ch = {}; this.cmdId = 0; this.queue = Promise.resolve(); this.want = false; this.retry = null; }
-  get name(){ return this.device?.name || "Recoil gun"; }
-  async pick(showAll){
+  constructor() {
+    super();
+    this.device = null;
+    this.ch = {};
+    this.cmdId = 0;
+    this.queue = Promise.resolve();
+    this.want = false;
+    this.retry = null;
+  }
+  get name() {
+    var _a;
+    return ((_a = this.device) == null ? void 0 : _a.name) || "Recoil gun";
+  }
+  async pick(showAll) {
     if (!navigator.bluetooth) throw new Error("No Web Bluetooth here. Use Chrome on Android, or the Bluefy browser on iPhone.");
-    const opts = showAll
-      ? { acceptAllDevices:true, optionalServices:[UUID.svc] }
-      : { filters:[{ services:[UUID.svc] }, { namePrefix:"SRG" }, { namePrefix:"Recoil" }], optionalServices:[UUID.svc] };
+    const opts = showAll ? { acceptAllDevices: true, optionalServices: [UUID.svc] } : { filters: [{ services: [UUID.svc] }, { namePrefix: "SRG" }, { namePrefix: "Recoil" }], optionalServices: [UUID.svc] };
     this.device = await navigator.bluetooth.requestDevice(opts);
     this.device.addEventListener("gattserverdisconnected", () => this.onDrop());
     this.want = true;
     await this.connect();
   }
-  async connect(){
+  async connect() {
     const server = await this.device.gatt.connect();
     const svc = await server.getPrimaryService(UUID.svc);
-    this.ch.id  = await svc.getCharacteristic(UUID.id);
+    this.ch.id = await svc.getCharacteristic(UUID.id);
     this.ch.tel = await svc.getCharacteristic(UUID.tel);
     this.ch.cmd = await svc.getCharacteristic(UUID.cmd);
     this.ch.cfg = await svc.getCharacteristic(UUID.cfg);
-    try{
+    try {
       const dv = await this.ch.id.readValue();
       const id = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-      this.type = id[10] === 0x01 ? "rifle" : "pistol";
-    }catch(e){ log("ID read failed", String(e)); }
-    this.ch.tel.addEventListener("characteristicvaluechanged", e => {
+      this.type = id[10] === 1 ? "rifle" : "pistol";
+    } catch (e) {
+      log("ID read failed", String(e));
+    }
+    this.ch.tel.addEventListener("characteristicvaluechanged", (e) => {
       const dv = e.target.value;
       this.handleTelemetry(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
     });
     await this.ch.tel.startNotifications();
-    this.prev = null; this.connected = true;
+    this.prev = null;
+    this.connected = true;
     log("gun connected:", this.name, this.type);
-    this.emit({ type:"connected" });
+    this.emit({ type: "connected" });
   }
-  onDrop(){
-    this.connected = false;
-    log("gun disconnected");
-    this.emit({ type:"disconnected" });
-    if (this.want && !this.retry){
-      this.retry = setInterval(async () => {
-        if (this.connected){ clearInterval(this.retry); this.retry = null; return; }
-        try{ await this.connect(); clearInterval(this.retry); this.retry = null; }
-        catch(e){ log("reconnect failed, retrying"); }
-      }, 4000);
+  disconnect() {
+    this.want = false;
+    clearInterval(this.retry);
+    this.retry = null;
+    try {
+      this.device && this.device.gatt.connected && this.device.gatt.disconnect();
+    } catch (e) {
     }
   }
-  enqueue(char, bytes){
-    this.queue = this.queue.then(async () => {
-      const c = this.ch[char];
-      if (!c || !this.connected) return;
-      if (c.writeValueWithResponse) await c.writeValueWithResponse(bytes); else await c.writeValue(bytes);
-    }).catch(e => log("write failed", char, String(e)));
+  onDrop() {
+    this.connected = false;
+    log("gun disconnected");
+    this.emit({ type: "disconnected" });
+    if (this.want && !this.retry) {
+      this.retry = setInterval(async () => {
+        if (this.connected) {
+          clearInterval(this.retry);
+          this.retry = null;
+          return;
+        }
+        try {
+          await this.connect();
+          clearInterval(this.retry);
+          this.retry = null;
+        } catch (e) {
+          log("reconnect failed, retrying");
+        }
+      }, 4e3);
+    }
+  }
+  async write(char, bytes) {
+    const c = this.ch[char];
+    if (!c || !this.connected) return false;
+    if (c.writeValueWithResponse) await c.writeValueWithResponse(bytes);
+    else await c.writeValue(bytes);
+    return true;
+  }
+  enqueue(job) {
+    this.queue = this.queue.then(job).catch((e) => log("write failed", String(e && e.message || e)));
     return this.queue;
   }
-  command(code, id, extra = []){
-    this.cmdId = (this.cmdId + 1) & 0x0F; if (this.cmdId === 0) this.cmdId = 1; // must change every command
-    return this.enqueue("cmd", commandBytes(this.cmdId, code, id, extra));
+  nextCmdId() {
+    let n = this.cmdId;
+    do {
+      n = n + 1 & 15;
+    } while (n === 0 || this.last && n === this.last.ack);
+    this.cmdId = n;
+    return n;
   }
-  writeConfig(bytes){ return this.enqueue("cfg", bytes); }
+  waitAck(n, ms) {
+    return new Promise((res) => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (this.last && this.last.ack === n && this.lastTelAt > t0) {
+          clearInterval(iv);
+          res(true);
+        } else if (Date.now() - t0 > ms) {
+          clearInterval(iv);
+          res(false);
+        }
+      }, 40);
+    });
+  }
+  // Commands are confirmed: the gun echoes the command ID in telemetry. Unconfirmed ones are resent
+  // with a new ID (only for idempotent commands). If the gun never echoes, stop waiting for it.
+  command(code, id, extra = [], retries = 3) {
+    return this.enqueue(async () => {
+      for (let i = 0; i < retries; i++) {
+        const n = this.nextCmdId();
+        if (!await this.write("cmd", commandBytes(n, code, id, extra))) return;
+        if (this.ackUnsupported) return;
+        if (await this.waitAck(n, 450)) {
+          this.acks = (this.acks || 0) + 1;
+          return;
+        }
+        this.misses = (this.misses || 0) + 1;
+        if (!this.acks && this.misses >= 4) {
+          this.ackUnsupported = true;
+          log("gun doesn't echo command IDs; sending without confirmation");
+          return;
+        }
+        log("no ack for command 0x" + code.toString(16) + ", resending");
+      }
+    });
+  }
+  kick(id) {
+    return this.command(CMD.RECOIL, id, [], 1);
+  }
+  flash(id) {
+    return this.command(CMD.FLASH, id, [], 1);
+  }
+  powerOff(id) {
+    return this.command(CMD.POWER_OFF, id, [], 1);
+  }
+  writeConfig(bytes) {
+    return this.enqueue(() => this.write("cfg", bytes));
+  }
 }
-
 class SimGun extends BaseGun {
-  constructor(){ super(); this.type = "pistol"; this.s = { id:0, ammo:0, locked:true, rc:0, tc:0, th:0, battery:0x1000, hc:0 }; }
-  get name(){ return "Simulated gun"; }
-  async pick(){ this.connected = true; this.emit({ type:"connected" }); this.tick = setInterval(() => this.send(), 100); }
-  send(hit){
+  constructor() {
+    super();
+    this.type = "pistol";
+    this.s = { id: 0, ammo: 0, locked: true, rc: 0, tc: 0, th: 0, battery: 4096, hc: 0 };
+  }
+  get name() {
+    return "Simulated gun";
+  }
+  disconnect() {
+    clearInterval(this.tick);
+    this.connected = false;
+  }
+  async pick() {
+    this.connected = true;
+    this.emit({ type: "connected" });
+    this.tick = setInterval(() => this.send(), 100);
+  }
+  send(hit) {
     const s = this.s, b = new Uint8Array(20);
-    b[1] = s.id; b[3] = ((s.rc & 15) << 4) | (s.tc & 15); b[4] = s.th & 15;
-    b[6] = s.battery & 0xFF; b[7] = s.battery >> 8; b[14] = s.ammo; b[15] = s.locked ? 1 : 0;
-    if (hit){ b[8] = hit[0]; b[9] = hit[1]; b[10] = 0x40 | (++s.hc & 15); }
+    b[1] = s.id;
+    b[3] = (s.rc & 15) << 4 | s.tc & 15;
+    b[4] = s.th & 15;
+    b[6] = s.battery & 255;
+    b[7] = s.battery >> 8;
+    b[14] = s.ammo;
+    b[15] = s.locked ? 1 : 0;
+    if (hit) {
+      b[8] = hit[0];
+      b[9] = hit[1];
+      b[10] = 64 | ++s.hc & 15;
+    }
     this.handleTelemetry(b);
   }
-  command(code, id, extra = []){
+  command(code, id, extra = []) {
+    var _a;
     const s = this.s;
     if (code === CMD.SET_ID) s.id = id;
-    if (code === CMD.RELOAD_START){ s.locked = true; s.id = id; }
-    if (code === CMD.RELOAD_FINISH){ s.locked = false; s.id = id; s.ammo = extra[1] ?? 30; }
+    if (code === CMD.RELOAD_START) {
+      s.locked = true;
+      s.id = id;
+    }
+    if (code === CMD.RELOAD_FINISH) {
+      s.locked = false;
+      s.id = id;
+      s.ammo = (_a = extra[1]) != null ? _a : 30;
+    }
     log("sim cmd", code.toString(16), "id", id, extra);
     return Promise.resolve();
   }
-  writeConfig(bytes){ log("sim cfg", [...bytes.slice(0, 12)].map(h2).join(" ")); return Promise.resolve(); }
-  pull(){ const s = this.s; s.tc++; if (!s.locked && s.ammo > 0) s.ammo--; this.send(); }
-  reloadBtn(){ this.s.rc++; this.send(); }
-  thumbBtn(){ this.s.th++; this.send(); }
-  hitBy(shooter){ this.shot = ((this.shot || 0) + 1) & 7; this.send([0xC0 | 0x38 | this.shot, (shooter << 2)]); }
-  grenade(){ this.send([0x31, 0xA7]); }
+  writeConfig(bytes) {
+    log("sim cfg", [...bytes.slice(0, 12)].map(h2).join(" "));
+    return Promise.resolve();
+  }
+  pull() {
+    const s = this.s;
+    s.tc++;
+    if (!s.locked && s.ammo > 0) s.ammo--;
+    this.send();
+  }
+  reloadBtn() {
+    this.s.rc++;
+    this.send();
+  }
+  thumbBtn() {
+    this.s.th++;
+    this.send();
+  }
+  hitBy(shooter) {
+    this.shot = (this.shot || 0) + 1 & 7;
+    this.send([192 | 56 | this.shot, shooter << 2]);
+  }
+  grenade() {
+    this.send([49, 167]);
+  }
 }
-const h2 = n => n.toString(16).padStart(2, "0").toUpperCase();
-
-/* ============================ SOUND ============================ */
+const h2 = (n) => n.toString(16).padStart(2, "0").toUpperCase();
 const Sfx = {
-  ctx:null,
-  unlock(){
-    if (!this.ctx){ const C = window.AudioContext || window.webkitAudioContext; if (C) this.ctx = new C(); }
+  ctx: null,
+  unlock() {
+    if (!this.ctx) {
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (C) this.ctx = new C();
+    }
     if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
   },
-  tone(freq, dur, type = "square", vol = 0.2, slide = 0, delay = 0){
-    const c = this.ctx; if (!c) return;
+  tone(freq, dur, type = "square", vol = 0.2, slide = 0, delay = 0) {
+    const c = this.ctx;
+    if (!c) return;
     const t0 = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
-    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t0);
     if (slide) o.frequency.linearRampToValueAtTime(Math.max(40, freq + slide), t0 + dur);
-    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g).connect(c.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(1e-4, t0 + dur);
+    o.connect(g).connect(c.destination);
+    o.start(t0);
+    o.stop(t0 + dur + 0.02);
   },
-  shot(){ this.tone(900, 0.06, "square", 0.05, -600); },
-  empty(){ this.tone(260, 0.03, "square", 0.15); },
-  hit(){ this.tone(180, 0.22, "sawtooth", 0.3, -80); },
-  marker(){ this.tone(2000, 0.04, "sine", 0.3); this.tone(2600, 0.04, "sine", 0.2, 0, 0.05); },
-  reload(){ this.tone(420, 0.07, "square", 0.12); this.tone(620, 0.07, "square", 0.12, 0, 1.4); },
-  death(){ this.tone(420, 0.9, "sawtooth", 0.3, -360); },
-  respawn(){ this.tone(440, 0.1, "sine", 0.3); this.tone(660, 0.1, "sine", 0.3, 0, 0.12); this.tone(880, 0.18, "sine", 0.3, 0, 0.24); },
-  beep(){ this.tone(880, 0.12, "sine", 0.3); },
-  go(){ this.tone(1320, 0.45, "sine", 0.35); },
-  end(){ this.tone(660, 0.3, "triangle", 0.3); this.tone(440, 0.6, "triangle", 0.3, 0, 0.32); }
+  shot() {
+    this.tone(900, 0.06, "square", 0.05, -600);
+  },
+  empty() {
+    this.tone(260, 0.03, "square", 0.15);
+  },
+  hit() {
+    this.tone(180, 0.22, "sawtooth", 0.3, -80);
+  },
+  marker() {
+    this.tone(2e3, 0.04, "sine", 0.3);
+    this.tone(2600, 0.04, "sine", 0.2, 0, 0.05);
+  },
+  reload() {
+    this.tone(420, 0.07, "square", 0.12);
+    this.tone(620, 0.07, "square", 0.12, 0, 1.4);
+  },
+  death() {
+    this.tone(420, 0.9, "sawtooth", 0.3, -360);
+  },
+  respawn() {
+    this.tone(440, 0.1, "sine", 0.3);
+    this.tone(660, 0.1, "sine", 0.3, 0, 0.12);
+    this.tone(880, 0.18, "sine", 0.3, 0, 0.24);
+  },
+  beep() {
+    this.tone(880, 0.12, "sine", 0.3);
+  },
+  go() {
+    this.tone(1320, 0.45, "sine", 0.35);
+  },
+  end() {
+    this.tone(660, 0.3, "triangle", 0.3);
+    this.tone(440, 0.6, "triangle", 0.3, 0, 0.32);
+  }
 };
-function speak(text){
-  try{ const u = new SpeechSynthesisUtterance(text); u.rate = 1.1; speechSynthesis.cancel(); speechSynthesis.speak(u); }catch{}
+function speak(text) {
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.1;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  } catch {
+  }
 }
-function buzz(p){ try{ navigator.vibrate && navigator.vibrate(p); }catch{} }
-
+function buzz(p) {
+  try {
+    navigator.vibrate && navigator.vibrate(p);
+  } catch {
+  }
+}
 let wakeLock = null;
-async function keepAwake(){
-  try{ if ("wakeLock" in navigator && !wakeLock){ wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => wakeLock = null); } }catch(e){ log("wake lock unavailable"); }
+async function keepAwake() {
+  try {
+    if ("wakeLock" in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => wakeLock = null);
+    }
+  } catch (e) {
+    log("wake lock unavailable");
+  }
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && G.phase !== "setup") keepAwake(); });
-
-/* ============================ STATE ============================ */
-const DEFAULTS = { mode:"ffa", arena:"hybrid", time:10, kills:15, health:10, respawn:10, gren:4, ff:false, marker:true };
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && G.phase !== "setup") keepAwake();
+});
+const DEFAULTS = { mode: "ffa", arena: "hybrid", time: 10, kills: 15, health: 10, respawn: 10, gren: 4, ff: false, marker: true };
 const me = { cid: store.get("cid", null) || Math.random().toString(36).slice(2, 10), name: store.get("name", "") };
 store.set("cid", me.cid);
-
 const G = {
-  phase:"setup",         // setup | lobby | countdown | playing | ended
-  offline:false, room:null, host:false, hostCid:null,
-  roster:[],             // {cid, name, gun, id, team}
-  settings:{ ...DEFAULTS, ...store.get("settings", {}) },
-  gameId:null, startAt:0, endAt:0,
-  myId:0, myTeam:"A", health:10, alive:true, respawnAt:0,
-  seq:0, events:new Map(), feed:[],
-  irMode:"hybrid", fireMode:"single", reloading:false, recentHits:new Map()
+  phase: "setup",
+  // setup | lobby | countdown | playing | ended
+  offline: false,
+  room: null,
+  host: false,
+  hostCid: null,
+  roster: [],
+  // {cid, name, gun, id, team}
+  settings: { ...DEFAULTS, ...store.get("settings", {}) },
+  gameId: null,
+  startAt: 0,
+  endAt: 0,
+  myId: 0,
+  myTeam: "A",
+  health: 10,
+  alive: true,
+  respawnAt: 0,
+  seq: 0,
+  events: /* @__PURE__ */ new Map(),
+  feed: [],
+  irMode: "hybrid",
+  fireMode: "single",
+  reloading: false,
+  recentHits: /* @__PURE__ */ new Map()
 };
 let gun = null;
-
-const rosterById = id => G.roster.find(p => p.id === id);
-const nameOf = id => rosterById(id)?.name || ("#" + id);
-const teamName = t => t === "A" ? "Blue" : "Red";
-const clipSize = () => gun?.type === "rifle" ? 30 : 15;
-
-/* ============================ NETWORK (MQTT over WSS) ============================
-   A public MQTT broker relays tiny JSON messages between phones. Works over cell
-   data or any Wi-Fi with internet, through any NAT. The game never waits on it. */
+const rosterById = (id) => G.roster.find((p) => p.id === id);
+const nameOf = (id) => {
+  var _a;
+  return ((_a = rosterById(id)) == null ? void 0 : _a.name) || "#" + id;
+};
+const teamName = (t) => t === "A" ? "Blue" : "Red";
+const clipSize = () => (gun == null ? void 0 : gun.type) === "rifle" ? 30 : 15;
 const BROKERS = ["wss://broker.hivemq.com:8884/mqtt", "wss://test.mosquitto.org:8081/mqtt", "wss://broker.emqx.io:8084/mqtt"];
 const Net = {
-  client:null, ok:false, brokerIx:0,
-  topic(sub){ return `kickback/v1/${G.room}/${sub}`; },
-  connect(){
-    if (!window.mqtt){ setNet(false, "network library not loaded"); return; }
+  client: null,
+  ok: false,
+  brokerIx: 0,
+  topic(sub) {
+    return `kickback/v1/${G.room}/${sub}`;
+  },
+  connect() {
+    if (!window.mqtt) {
+      setNet(false, "network library not loaded");
+      return;
+    }
     this.disconnect();
     const url = BROKERS[this.brokerIx % BROKERS.length];
     log("connecting to", url);
-    this.client = mqtt.connect(url, { clientId:"kb_" + me.cid + "_" + Math.random().toString(36).slice(2, 6), clean:true, reconnectPeriod:2500, connectTimeout:8000, keepalive:20 });
+    this.client = mqtt.connect(url, { clientId: "kb_" + me.cid + "_" + Math.random().toString(36).slice(2, 6), clean: true, reconnectPeriod: 2500, connectTimeout: 8e3, keepalive: 20 });
     let everConnected = false;
-    const failover = setTimeout(() => { if (!everConnected){ log("broker unreachable, trying next"); this.brokerIx++; this.connect(); } }, 9000);
+    const failover = setTimeout(() => {
+      if (!everConnected) {
+        log("broker unreachable, trying next");
+        this.brokerIx++;
+        this.connect();
+      }
+    }, 9e3);
     this.client.on("connect", () => {
-      everConnected = true; clearTimeout(failover);
-      this.ok = true; setNet(true);
-      this.client.subscribe(this.topic("#"), { qos:1 });
+      everConnected = true;
+      clearTimeout(failover);
+      this.ok = true;
+      setNet(true);
+      this.client.subscribe(this.topic("#"), { qos: 1 });
       onNetUp();
     });
-    this.client.on("close", () => { this.ok = false; setNet(false); });
-    this.client.on("offline", () => { this.ok = false; setNet(false); });
-    this.client.on("error", e => log("net error", String(e?.message || e)));
+    this.client.on("close", () => {
+      this.ok = false;
+      setNet(false);
+    });
+    this.client.on("offline", () => {
+      this.ok = false;
+      setNet(false);
+    });
+    this.client.on("error", (e) => log("net error", String((e == null ? void 0 : e.message) || e)));
     this.client.on("message", (topic, payload) => {
-      if (!payload || !payload.length) return;            // cleared retained message
-      let m; try{ m = JSON.parse(payload.toString()); }catch{ return; }
+      if (!payload || !payload.length) return;
+      let m;
+      try {
+        m = JSON.parse(payload.toString());
+      } catch {
+        return;
+      }
       if (m.from === me.cid && m.t !== "ROSTER" && m.t !== "START") return;
       handle(m);
     });
   },
-  disconnect(){ try{ this.client && this.client.end(true); }catch{} this.client = null; this.ok = false; },
-  send(m, sub = "m", retain = false){
-    if (G.offline || !this.client) return;
-    m.from = me.cid; m.fromId = G.myId;
-    this.client.publish(this.topic(sub), JSON.stringify(m), { qos:1, retain });
+  disconnect() {
+    try {
+      this.client && this.client.end(true);
+    } catch {
+    }
+    this.client = null;
+    this.ok = false;
   },
-  clear(sub){ if (this.client) this.client.publish(this.topic(sub), "", { qos:1, retain:true }); }
+  send(m, sub = "m", retain = false) {
+    if (G.offline || !this.client) return;
+    m.from = me.cid;
+    m.fromId = G.myId;
+    this.client.publish(this.topic(sub), JSON.stringify(m), { qos: 1, retain });
+  },
+  clear(sub) {
+    if (this.client) this.client.publish(this.topic(sub), "", { qos: 1, retain: true });
+  }
 };
-function setNet(ok, why){
+function setNet(ok, why) {
   const d = $("#netDot");
-  d.className = "net " + (G.offline ? "" : ok ? "ok" : "bad");
-  d.title = G.offline ? "offline game" : ok ? "network connected" : ("network down" + (why ? ": " + why : ""));
+  d.className = "net " + (G.offline || !G.room ? "" : ok ? "ok" : "bad");
+  d.title = G.offline ? "offline game" : ok ? "network connected" : "network down" + (why ? ": " + why : "");
 }
-
-function onNetUp(){
+function onNetUp() {
   if (G.host) publishRoster();
   else sendHello();
   if (G.phase === "playing" || G.phase === "ended") sendHeartbeat();
 }
-function sendHello(){ Net.send({ t:"HELLO", name:me.name, gun:gun?.type || "pistol" }); }
-function publishRoster(){
-  if (!G.host) return;
-  Net.send({ t:"ROSTER", host:me.cid, roster:G.roster, settings:G.settings }, "roster", true);
+function sendHello() {
+  Net.send({ t: "HELLO", name: me.name, gun: (gun == null ? void 0 : gun.type) || "pistol" });
 }
-
-function handle(m){
-  switch (m.t){
+function publishRoster() {
+  if (!G.host) return;
+  Net.send({ t: "ROSTER", host: me.cid, roster: G.roster, settings: G.settings }, "roster", true);
+}
+function handle(m) {
+  switch (m.t) {
     case "HELLO": {
       if (!G.host) return;
-      let p = G.roster.find(x => x.cid === m.from);
-      if (!p){
-        const used = new Set(G.roster.map(x => x.id));
-        let id = 1; while (used.has(id)) id++;
-        const a = G.roster.filter(x => x.team === "A").length, b = G.roster.filter(x => x.team === "B").length;
-        p = { cid:m.from, name:m.name || "Player", gun:m.gun, id, team: a <= b ? "A" : "B" };
+      let p = G.roster.find((x) => x.cid === m.from);
+      if (!p) {
+        const used = new Set(G.roster.map((x) => x.id));
+        let id = 1;
+        while (used.has(id)) id++;
+        const a = G.roster.filter((x) => x.team === "A").length, b = G.roster.filter((x) => x.team === "B").length;
+        p = { cid: m.from, name: m.name || "Player", gun: m.gun, id, team: a <= b ? "A" : "B" };
         G.roster.push(p);
-      } else { p.name = m.name || p.name; p.gun = m.gun || p.gun; }
-      publishRoster(); renderLobby();
+      } else {
+        p.name = m.name || p.name;
+        p.gun = m.gun || p.gun;
+      }
+      publishRoster();
+      renderLobby();
       break;
     }
     case "ROSTER": {
       if (G.host && m.host !== me.cid) return;
-      G.hostCid = m.host; G.roster = m.roster || [];
-      if (!G.host) G.settings = { ...DEFAULTS, ...(m.settings || {}) };
+      G.hostCid = m.host;
+      G.roster = m.roster || [];
+      if (!G.host) G.settings = { ...DEFAULTS, ...m.settings || {} };
       applyMyRosterEntry();
       renderLobby();
       break;
     }
     case "START": {
       if (!m.gameId || m.gameId === G.endedGame) return;
-      if (G.phase === "playing" || G.phase === "countdown"){ if (m.gameId === G.gameId) return; }
-      const endAt = m.startAt + m.settings.time * 60000;
-      if (Date.now() > endAt) return;                      // stale retained start
-      G.roster = m.roster || G.roster; G.settings = { ...DEFAULTS, ...m.settings };
+      if (G.phase === "playing" || G.phase === "countdown") {
+        if (m.gameId === G.gameId) return;
+      }
+      const endAt = m.startAt + m.settings.time * 6e4;
+      if (Date.now() > endAt) return;
+      G.roster = m.roster || G.roster;
+      G.settings = { ...DEFAULTS, ...m.settings };
       applyMyRosterEntry();
-      if (!G.myId){ toast("Match started without you. Wait for the next one."); return; }
+      if (!G.myId) {
+        toast("Match started without you. Wait for the next one.");
+        return;
+      }
       beginMatch(m.gameId, m.startAt);
       break;
     }
-    case "DEATH": if (m.ev && m.ev.game === G.gameId) addEvent(m.ev); break;
-    case "EVENTS": for (const ev of (m.evs || [])) if (ev.game === G.gameId) addEvent(ev); break;
-    case "HIT": if (m.to === G.myId && G.phase === "playing" && G.settings.marker){ Sfx.marker(); buzz(20); } break;
+    case "DEATH":
+      if (m.ev && m.ev.game === G.gameId) addEvent(m.ev);
+      break;
+    case "EVENTS":
+      for (const ev of m.evs || []) if (ev.game === G.gameId) addEvent(ev);
+      break;
+    case "HIT":
+      if (m.to === G.myId && G.phase === "playing" && G.settings.marker) {
+        Sfx.marker();
+        buzz(20);
+      }
+      break;
     case "HB": {
       if (m.game !== G.gameId) return;
-      const have = (m.have && m.have[G.myId]) || 0;
-      if (have < G.seq){
-        const mine = [...G.events.values()].filter(e => e.victim === G.myId && e.seq > have);
-        if (mine.length) Net.send({ t:"EVENTS", evs:mine });
+      const have = m.have && m.have[G.myId] || 0;
+      if (have < G.seq) {
+        const mine = [...G.events.values()].filter((e) => e.victim === G.myId && e.seq > have);
+        if (mine.length) Net.send({ t: "EVENTS", evs: mine });
       }
       break;
     }
-    case "END": if (m.gameId === G.gameId && G.phase !== "ended") endMatch("Host ended the match"); break;
+    case "END":
+      if (m.gameId === G.gameId && G.phase !== "ended") endMatch("Host ended the match");
+      break;
   }
 }
-function applyMyRosterEntry(){
-  const p = G.roster.find(x => x.cid === me.cid);
+function applyMyRosterEntry() {
+  const p = G.roster.find((x) => x.cid === me.cid);
   if (!p) return;
   const changed = p.id !== G.myId;
-  G.myId = p.id; G.myTeam = p.team;
+  G.myId = p.id;
+  G.myTeam = p.team;
   if (changed && G.phase === "lobby") gunSetup(true);
 }
-function sendHeartbeat(){
+function sendHeartbeat() {
   const have = {};
   for (const e of G.events.values()) have[e.victim] = Math.max(have[e.victim] || 0, e.seq);
-  Net.send({ t:"HB", game:G.gameId, alive:G.alive, health:G.health, have });
+  Net.send({ t: "HB", game: G.gameId, alive: G.alive, health: G.health, have });
 }
-
-/* ============================ GAME ENGINE ============================ */
-function gunSetup(locked = true){
+function gunSetup(locked = true) {
   if (!gun || !G.myId) return;
   gun.setId(G.myId);
   gun.recoil(true);
   applyWeaponConfig();
   if (locked) gun.lock(G.myId);
 }
-function applyWeaponConfig(){
+function applyWeaponConfig() {
   if (!gun) return;
   gun.configure(FIRE_MODES[G.fireMode], IR_MODES[G.irMode]);
   $("#btnIr").textContent = "IR: " + IR_MODES[G.irMode].label;
   $("#btnFire").textContent = "Fire: " + FIRE_MODES[G.fireMode].label;
 }
-
-function beginMatch(gameId, startAt){
-  G.gameId = gameId; G.startAt = startAt; G.endAt = startAt + G.settings.time * 60000;
+function beginMatch(gameId, startAt) {
+  G.gameId = gameId;
+  G.startAt = startAt;
+  G.endAt = startAt + G.settings.time * 6e4;
   const saved = store.get("game", null);
   G.seq = saved && saved.gameId === gameId ? saved.seq : 0;
-  G.events = new Map(); G.feed = []; G.recentHits.clear();
+  G.events = /* @__PURE__ */ new Map();
+  G.feed = [];
+  G.recentHits.clear();
   if (saved && saved.gameId === gameId) for (const e of saved.events || []) G.events.set(e.victim + ":" + e.seq, e);
-  G.health = G.settings.health; G.alive = true; G.respawnAt = 0; G.reloading = false;
-  G.irMode = G.settings.arena; G.fireMode = gun?.type === "rifle" ? "auto" : "single";
+  G.health = G.settings.health;
+  G.alive = true;
+  G.respawnAt = 0;
+  G.reloading = false;
+  G.irMode = G.settings.arena;
+  G.fireMode = (gun == null ? void 0 : gun.type) === "rifle" ? "auto" : "single";
   G.phase = Date.now() < startAt ? "countdown" : "playing";
   gunSetup(true);
   if (G.phase === "playing") gun && gun.load(G.myId, clipSize());
   keepAwake();
-  show("game"); renderHud(); renderScore();
+  show("game");
+  renderHud();
+  renderScore();
 }
-
-function startAsHost(){
+function startAsHost() {
   const gameId = Math.random().toString(36).slice(2, 10);
-  const startAt = Date.now() + 6000;
-  if (G.offline){ beginMatch(gameId, startAt); return; }
-  Net.send({ t:"START", gameId, startAt, roster:G.roster, settings:G.settings }, "start", true);
+  const startAt = Date.now() + 6e3;
+  if (G.offline) {
+    beginMatch(gameId, startAt);
+    return;
+  }
+  Net.send({ t: "START", gameId, startAt, roster: G.roster, settings: G.settings }, "start", true);
   beginMatch(gameId, startAt);
 }
-
-function onGunEvent(ev){
-  if (ev.type === "connected" || ev.type === "disconnected"){ renderGunStatus(); if (ev.type === "connected" && G.myId && G.phase !== "setup") gunSetup(!(G.phase === "playing" && G.alive)); if (ev.type === "connected" && G.phase === "playing" && G.alive) gun.load(G.myId, clipSize()); return; }
-  if (ev.type === "tel"){ renderLab(ev); if (G.phase === "playing") $("#hudAmmo").textContent = ev.t.ammo; return; }
+function onGunEvent(ev) {
+  if (ev.type === "connected" || ev.type === "disconnected") {
+    renderGunStatus();
+    if (ev.type === "connected" && G.myId && G.phase !== "setup") gunSetup(!(G.phase === "playing" && G.alive));
+    if (ev.type === "connected" && G.phase === "playing" && G.alive) gun.load(G.myId, clipSize());
+    return;
+  }
+  if (ev.type === "tel") {
+    renderLab(ev);
+    if (G.phase === "playing") $("#hudAmmo").textContent = ev.t.ammo;
+    return;
+  }
   if (G.phase !== "playing") return;
-  switch (ev.type){
-    case "shot": Sfx.shot(); break;
-    case "triggerPress": if (G.alive && ev.ammo === 0 && !G.reloading) Sfx.empty(); break;
-    case "reloadPress": if (G.alive && !G.reloading) doReload(); break;
-    case "thumbPress": cycleFire(); break;
-    case "hit": onHit(ev.hit); break;
+  switch (ev.type) {
+    case "shot":
+      Sfx.shot();
+      break;
+    case "triggerPress":
+      if (G.alive && ev.ammo === 0 && !G.reloading) Sfx.empty();
+      break;
+    case "reloadPress":
+      if (G.alive && !G.reloading) doReload();
+      break;
+    case "thumbPress":
+      cycleFire();
+      break;
+    case "hit":
+      onHit(ev.hit);
+      break;
   }
 }
-function doReload(){
-  G.reloading = true; Sfx.reload();
+function doReload() {
+  G.reloading = true;
+  Sfx.reload();
   gun.lock(G.myId);
-  setTimeout(() => { if (G.alive && G.phase === "playing") gun.load(G.myId, clipSize()); G.reloading = false; }, 1500);
+  setTimeout(() => {
+    if (G.alive && G.phase === "playing") gun.load(G.myId, clipSize());
+    G.reloading = false;
+  }, 1500);
 }
-function cycleFire(){
-  const order = gun?.type === "rifle" ? ["auto", "burst", "single"] : ["single", "burst"];
+function cycleFire() {
+  const order = (gun == null ? void 0 : gun.type) === "rifle" ? ["auto", "burst", "single"] : ["single", "burst"];
   G.fireMode = order[(order.indexOf(G.fireMode) + 1) % order.length];
-  applyWeaponConfig(); Sfx.beep();
+  applyWeaponConfig();
+  Sfx.beep();
 }
-function cycleIr(){
+function cycleIr() {
   const order = ["outdoor", "hybrid", "indoor"];
   G.irMode = order[(order.indexOf(G.irMode) + 1) % order.length];
-  applyWeaponConfig(); Sfx.beep(); toast("IR set to " + IR_MODES[G.irMode].label);
+  applyWeaponConfig();
+  Sfx.beep();
+  toast("IR set to " + IR_MODES[G.irMode].label);
 }
-
-function onHit(h){
+function onHit(h) {
   if (!G.alive) return;
   const now = performance.now();
-  if (h.grenade){
-    if (h.msg !== 1) return;                                  // only explosion messages hurt
-    const k = "g" + h.gid;
-    if (now - (G.recentHits.get(k) || 0) < 1500) return;      // grenade floods IR for ~45 s
-    G.recentHits.set(k, now);
+  if (h.grenade) {
+    if (h.msg !== 1) return;
+    const k2 = "g" + h.gid;
+    if (now - (G.recentHits.get(k2) || 0) < 1500) return;
+    G.recentHits.set(k2, now);
     if (G.settings.gren > 0) damage(G.settings.gren, 0, true);
     return;
   }
   if (h.shooter === G.myId) return;
   const k = h.shooter + ":" + h.shotId;
-  if (now - (G.recentHits.get(k) || 0) < 400) return;         // same shot reported twice
+  if (now - (G.recentHits.get(k) || 0) < 400) return;
   G.recentHits.set(k, now);
   const shooter = rosterById(h.shooter);
   if (G.settings.mode === "tdm" && !G.settings.ff && shooter && shooter.team === G.myTeam) return;
   damage(1, h.shooter, false);
 }
-function damage(n, killer, grenade){
+function damage(n, killer, grenade) {
   G.health = Math.max(0, G.health - n);
-  Sfx.hit(); buzz(60);
-  document.body.classList.remove("flash"); void document.body.offsetWidth; document.body.classList.add("flash");
-  if (killer) Net.send({ t:"HIT", to:killer });
+  Sfx.hit();
+  buzz(60);
+  document.body.classList.remove("flash");
+  void document.body.offsetWidth;
+  document.body.classList.add("flash");
+  if (killer) Net.send({ t: "HIT", to: killer });
   if (G.health <= 0) die(killer, grenade);
   renderHud();
 }
-function die(killer, grenade){
+function die(killer, grenade) {
   G.alive = false;
   gun && gun.lock(G.myId);
-  const ev = { game:G.gameId, victim:G.myId, seq:++G.seq, killer:killer || 0, grenade:!!grenade, t:Date.now() };
+  const ev = { game: G.gameId, victim: G.myId, seq: ++G.seq, killer: killer || 0, grenade: !!grenade, t: Date.now() };
   addEvent(ev);
-  Net.send({ t:"DEATH", ev });
-  G.respawnAt = Date.now() + G.settings.respawn * 1000;
-  Sfx.death(); buzz([200, 80, 200]);
+  Net.send({ t: "DEATH", ev });
+  G.respawnAt = Date.now() + G.settings.respawn * 1e3;
+  Sfx.death();
+  buzz([200, 80, 200]);
   speak(grenade ? "Grenade. You're out." : killer ? "Eliminated by " + nameOf(killer) : "Eliminated");
 }
-function respawn(){
-  G.alive = true; G.health = G.settings.health; G.reloading = false;
+function respawn() {
+  G.alive = true;
+  G.health = G.settings.health;
+  G.reloading = false;
   gun && gun.load(G.myId, clipSize());
-  Sfx.respawn(); speak("Back in");
+  Sfx.respawn();
+  speak("Back in");
   renderHud();
 }
-function addEvent(ev){
+function addEvent(ev) {
   const k = ev.victim + ":" + ev.seq;
   if (G.events.has(k)) return;
   G.events.set(k, ev);
   if (ev.victim === G.myId) G.seq = Math.max(G.seq, ev.seq);
-  const txt = ev.grenade ? `${nameOf(ev.victim)} caught a grenade`
-            : ev.killer ? `${nameOf(ev.killer)} tagged out ${nameOf(ev.victim)}` : `${nameOf(ev.victim)} is out`;
-  G.feed.unshift(txt); G.feed.length = Math.min(G.feed.length, 6);
-  if (ev.killer === G.myId && ev.victim !== G.myId){ speak("Kill"); }
-  store.set("game", { gameId:G.gameId, seq:G.seq, events:[...G.events.values()] });
-  renderScore(); renderHud();
+  const txt = ev.grenade ? `${nameOf(ev.victim)} caught a grenade` : ev.killer ? `${nameOf(ev.killer)} tagged out ${nameOf(ev.victim)}` : `${nameOf(ev.victim)} is out`;
+  G.feed.unshift(txt);
+  G.feed.length = Math.min(G.feed.length, 6);
+  if (ev.killer === G.myId && ev.victim !== G.myId) {
+    speak("Kill");
+  }
+  store.set("game", { gameId: G.gameId, seq: G.seq, events: [...G.events.values()] });
+  renderScore();
+  renderHud();
   const lim = G.settings.kills;
-  if (lim > 0 && G.phase === "playing"){
+  if (lim > 0 && G.phase === "playing") {
     const s = computeScore();
     const top = G.settings.mode === "tdm" ? Math.max(s.teams.A, s.teams.B) : Math.max(0, ...Object.values(s.kills));
     if (top >= lim) endMatch("Kill limit reached");
   }
 }
-function computeScore(){
-  const kills = {}, deaths = {}, teams = { A:0, B:0 };
-  for (const p of G.roster){ kills[p.id] = 0; deaths[p.id] = 0; }
-  for (const e of G.events.values()){
+function computeScore() {
+  var _a, _b;
+  const kills = {}, deaths = {}, teams = { A: 0, B: 0 };
+  for (const p of G.roster) {
+    kills[p.id] = 0;
+    deaths[p.id] = 0;
+  }
+  for (const e of G.events.values()) {
     deaths[e.victim] = (deaths[e.victim] || 0) + 1;
     if (!e.killer || e.killer === e.victim) continue;
-    const kt = rosterById(e.killer)?.team, vt = rosterById(e.victim)?.team;
-    if (G.settings.mode === "tdm" && kt && kt === vt) continue;   // team kills don't score
+    const kt = (_a = rosterById(e.killer)) == null ? void 0 : _a.team, vt = (_b = rosterById(e.victim)) == null ? void 0 : _b.team;
+    if (G.settings.mode === "tdm" && kt && kt === vt) continue;
     kills[e.killer] = (kills[e.killer] || 0) + 1;
     if (kt) teams[kt]++;
   }
   return { kills, deaths, teams };
 }
-function endMatch(reason){
+function endMatch(reason) {
   if (G.phase === "ended") return;
-  G.phase = "ended"; G.endedGame = G.gameId;
+  G.phase = "ended";
+  G.endedGame = G.gameId;
   gun && gun.lock(G.myId);
-  Sfx.end(); speak("Match over");
+  Sfx.end();
+  speak("Match over");
   sendHeartbeat();
   toast(reason || "Match over");
-  renderFinal(); show("end");
+  renderFinal();
+  show("end");
 }
-
-/* main loop */
 let lastHb = 0, lastBeep = 0;
 setInterval(() => {
   const now = Date.now();
-  if (G.phase === "countdown"){
-    const left = Math.ceil((G.startAt - now) / 1000);
+  if (G.phase === "countdown") {
+    const left = Math.ceil((G.startAt - now) / 1e3);
     $("#hudState").textContent = left > 0 ? "STARTING IN " + left : "GO";
     $("#hudState").className = "state";
-    if (left <= 3 && left > 0 && left !== lastBeep){ lastBeep = left; Sfx.beep(); }
-    if (now >= G.startAt){
-      G.phase = "playing"; lastBeep = 0;
+    if (left <= 3 && left > 0 && left !== lastBeep) {
+      lastBeep = left;
+      Sfx.beep();
+    }
+    if (now >= G.startAt) {
+      G.phase = "playing";
+      lastBeep = 0;
       gun && gun.load(G.myId, clipSize());
-      Sfx.go(); speak("Go"); renderHud();
+      Sfx.go();
+      speak("Go");
+      renderHud();
     }
   }
-  if (G.phase === "playing"){
+  if (G.phase === "playing") {
     if (!G.alive && now >= G.respawnAt) respawn();
     if (now >= G.endAt) endMatch("Time's up");
-    if (now - lastHb > 2000){ lastHb = now; sendHeartbeat(); }
+    if (now - lastHb > 2e3) {
+      lastHb = now;
+      sendHeartbeat();
+    }
     renderClock();
-    if (!G.alive) $("#hudRespawn").textContent = Math.max(0, Math.ceil((G.respawnAt - now) / 1000));
+    if (!G.alive) $("#hudRespawn").textContent = Math.max(0, Math.ceil((G.respawnAt - now) / 1e3));
   }
-  if (G.phase === "ended" && now - lastHb > 3000 && now < G.endAt + 120000){ lastHb = now; sendHeartbeat(); renderFinal(); }
-  if (G.phase === "lobby" && !G.host && !G.offline && now - lastHb > 3000){ lastHb = now; if (!G.roster.some(p => p.cid === me.cid)) sendHello(); }
+  if (G.phase === "ended" && now - lastHb > 3e3 && now < G.endAt + 12e4) {
+    lastHb = now;
+    sendHeartbeat();
+    renderFinal();
+  }
+  if (G.phase === "lobby" && !G.host && !G.offline && now - lastHb > 3e3) {
+    lastHb = now;
+    if (!G.roster.some((p) => p.cid === me.cid)) sendHello();
+  }
+  if (now - lastSlow > 1e3) {
+    lastSlow = now;
+    slowTick(now);
+  }
 }, 200);
-
-/* ============================ UI ============================ */
-function show(view){
+let lastSlow = 0;
+function slowTick(now) {
+  if (gun) renderGunStatus();
+  if (G.phase === "lobby" && !G.host && !G.offline) {
+    const inRoom = G.roster.some((p) => p.cid === me.cid);
+    $("#lobbyNote").textContent = !Net.ok ? "Connecting to the network\u2026" : inRoom ? "You're in. Waiting for the host to start." : now - G.joinedAt > 8e3 ? "No host found for " + G.room + " yet. Check the code with the host." : "Looking for room " + G.room + "\u2026";
+  }
+  if ($("#tab-lab").classList.contains("on")) renderDiag(now);
+}
+function renderDiag(now) {
+  const d = {
+    version: VERSION,
+    browser: navigator.userAgent.replace(/\s+/g, " ").slice(0, 160),
+    webBluetooth: !!navigator.bluetooth,
+    wakeLock: "wakeLock" in navigator,
+    networkLib: !!window.mqtt,
+    network: G.room ? Net.ok ? "connected" : "down" : "not in a room",
+    phase: G.phase,
+    myId: G.myId,
+    team: G.myTeam,
+    gun: gun ? {
+      name: gun.name,
+      type: gun.type,
+      connected: gun.connected,
+      lastTelemetryMsAgo: gun.lastTelAt ? now - gun.lastTelAt : null,
+      cmdConfirmed: gun.acks || 0,
+      cmdUnconfirmed: gun.misses || 0,
+      ackUnsupported: !!gun.ackUnsupported
+    } : null
+  };
+  $("#diag").textContent = JSON.stringify(d, null, 1);
+}
+function show(view) {
   for (const v of ["setup", "lobby", "game", "end"]) $("#v-" + v).style.display = v === view ? "" : "none";
   if (view !== "game" && G.phase === "setup") setNet(false);
 }
-function renderGunStatus(){
+function renderGunStatus() {
   const el = $("#gunStatus");
-  if (!gun){ el.textContent = "Not connected"; return; }
-  const batt = gun.last ? " · battery " + gun.last.battery : "";
-  el.innerHTML = gun.connected
-    ? `<b style="color:var(--good)">Connected</b> · ${esc(gun.name)} · ${gun.type}${batt}`
-    : `<b style="color:var(--bad)">Reconnecting…</b> · ${esc(gun.name)}`;
+  if (!gun) {
+    el.textContent = "Not connected";
+    return;
+  }
+  const pct = gun.batteryPct ? gun.batteryPct() : null;
+  const batt = pct === null ? "" : " \xB7 battery ~" + pct + "%";
+  el.innerHTML = gun.connected ? `<b style="color:var(--good)">Connected</b> \xB7 ${esc(gun.name)} \xB7 ${gun.type}${batt}` : `<b style="color:var(--bad)">Reconnecting\u2026</b> \xB7 ${esc(gun.name)}`;
   $("#labStatus").innerHTML = el.innerHTML;
   $("#simPanel").style.display = gun instanceof SimGun ? "" : "none";
 }
-function renderLobby(){
-  $("#roomCode").textContent = G.offline ? "OFFLINE" : (G.room || "----");
-  $("#lobbyNote").textContent = G.offline ? "No network. Scores stay on each phone."
-    : G.host ? "Others tap Join and enter this code." : "Waiting for the host to start.";
+function renderLobby() {
+  $("#roomCode").textContent = G.offline ? "OFFLINE" : G.room || "----";
+  $("#lobbyNote").textContent = G.offline ? "No network. Scores stay on each phone." : G.host ? "Others tap Join and enter this code." : "Waiting for the host to start.";
   const r = $("#roster");
-  const list = G.offline ? [{ cid:me.cid, name:me.name, id:G.myId, team:G.myTeam, gun:gun?.type }] : G.roster;
-  r.innerHTML = list.length ? list.map(p => `
+  const list = G.offline ? [{ cid: me.cid, name: me.name, id: G.myId, team: G.myTeam, gun: gun == null ? void 0 : gun.type }] : G.roster;
+  r.innerHTML = list.length ? list.map((p) => `
     <div data-cid="${esc(p.cid)}">
       <span class="id">#${p.id}</span>
-      <span class="nm">${esc(p.name)} <span class="muted">${esc(p.gun || "")}${p.cid === me.cid ? " · you" : ""}</span></span>
+      <span class="nm">${esc(p.name)} <span class="muted">${esc(p.gun || "")}${p.cid === me.cid ? " \xB7 you" : ""}</span></span>
       ${G.settings.mode === "tdm" ? `<span class="pill ${p.team}">${teamName(p.team)}</span>` : ""}
-    </div>`).join("") : `<p class="muted">Waiting for players…</p>`;
+    </div>`).join("") : `<p class="muted">Waiting for players\u2026</p>`;
   $("#rosterHint").textContent = G.host && G.settings.mode === "tdm" ? "Tap a player to switch their team." : "";
   $("#offlinePick").style.display = G.offline ? "" : "none";
   const canEdit = G.host || G.offline;
@@ -831,168 +1292,280 @@ function renderLobby(){
   $("#rulesView").style.display = canEdit ? "none" : "";
   $("#btnStart").style.display = canEdit ? "" : "none";
   const s = G.settings;
-  $("#rulesView").innerHTML = `${s.mode === "tdm" ? "Team deathmatch" : "Free-for-all"} · ${IR_MODES[s.arena].label} · ${s.time} min · ${s.kills || "no"} kill limit<br>
-    ${s.health} health · ${s.respawn}s respawn · grenade ${s.gren} · friendly fire ${s.ff ? "on" : "off"}`;
+  $("#rulesView").innerHTML = `${s.mode === "tdm" ? "Team deathmatch" : "Free-for-all"} \xB7 ${IR_MODES[s.arena].label} \xB7 ${s.time} min \xB7 ${s.kills || "no"} kill limit<br>
+    ${s.health} health \xB7 ${s.respawn}s respawn \xB7 grenade ${s.gren} \xB7 friendly fire ${s.ff ? "on" : "off"}`;
   writeRulesForm();
 }
-function writeRulesForm(){
+function writeRulesForm() {
   const s = G.settings;
-  $("#s-mode").value = s.mode; $("#s-arena").value = s.arena; $("#s-time").value = s.time; $("#s-kills").value = s.kills;
-  $("#s-health").value = s.health; $("#s-respawn").value = s.respawn; $("#s-gren").value = s.gren;
-  $("#s-ff").value = s.ff ? "1" : "0"; $("#s-marker").checked = !!s.marker;
+  $("#s-mode").value = s.mode;
+  $("#s-arena").value = s.arena;
+  $("#s-time").value = s.time;
+  $("#s-kills").value = s.kills;
+  $("#s-health").value = s.health;
+  $("#s-respawn").value = s.respawn;
+  $("#s-gren").value = s.gren;
+  $("#s-ff").value = s.ff ? "1" : "0";
+  $("#s-marker").checked = !!s.marker;
 }
-function readRulesForm(){
-  const n = (id, lo, hi, d) => { const v = parseInt($(id).value, 10); return isNaN(v) ? d : Math.max(lo, Math.min(hi, v)); };
+function readRulesForm() {
+  const n = (id, lo, hi, d) => {
+    const v = parseInt($(id).value, 10);
+    return isNaN(v) ? d : Math.max(lo, Math.min(hi, v));
+  };
   G.settings = {
-    mode:$("#s-mode").value, arena:$("#s-arena").value,
-    time:n("#s-time", 1, 60, 10), kills:n("#s-kills", 0, 200, 15), health:n("#s-health", 1, 99, 10),
-    respawn:n("#s-respawn", 0, 120, 10), gren:n("#s-gren", 0, 99, 4), ff:$("#s-ff").value === "1", marker:$("#s-marker").checked
+    mode: $("#s-mode").value,
+    arena: $("#s-arena").value,
+    time: n("#s-time", 1, 60, 10),
+    kills: n("#s-kills", 0, 200, 15),
+    health: n("#s-health", 1, 99, 10),
+    respawn: n("#s-respawn", 0, 120, 10),
+    gren: n("#s-gren", 0, 99, 4),
+    ff: $("#s-ff").value === "1",
+    marker: $("#s-marker").checked
   };
   store.set("settings", G.settings);
   if (G.host) publishRoster();
   renderLobby();
 }
-function renderHud(){
+function renderHud() {
   if (G.phase === "countdown") return;
   const st = $("#hudState");
-  if (G.phase === "playing"){
-    st.textContent = G.alive ? "ALIVE" : "OUT"; st.className = "state " + (G.alive ? "alive" : "dead");
+  if (G.phase === "playing") {
+    st.textContent = G.alive ? "ALIVE" : "OUT";
+    st.className = "state " + (G.alive ? "alive" : "dead");
   }
   $("#hudRespawn").style.display = G.alive ? "none" : "";
   const pct = Math.max(0, G.health / G.settings.health * 100);
-  const bar = $("#hpBar"); bar.style.width = pct + "%"; bar.className = pct <= 30 ? "low" : "";
+  const bar = $("#hpBar");
+  bar.style.width = pct + "%";
+  bar.className = pct <= 30 ? "low" : "";
   $("#hudTeam").innerHTML = `#${G.myId} ${esc(me.name)} ` + (G.settings.mode === "tdm" ? `<span class="pill ${G.myTeam}">${teamName(G.myTeam)}</span>` : "");
   const s = computeScore();
   $("#hudKills").textContent = s.kills[G.myId] || 0;
   $("#hudDeaths").textContent = s.deaths[G.myId] || 0;
-  $("#feed").innerHTML = G.feed.map(f => `<div>${esc(f)}</div>`).join("") || `<div>No tags yet</div>`;
-  $("#btnEnd").style.display = (G.host || G.offline) ? "" : "none";
-  $("#simShooter").innerHTML = Array.from({ length:12 }, (_, i) => i + 1).filter(i => i !== G.myId).map(i => `<option>${i}</option>`).join("");
+  $("#feed").innerHTML = G.feed.map((f) => `<div>${esc(f)}</div>`).join("") || `<div>No tags yet</div>`;
+  $("#btnEnd").style.display = G.host || G.offline ? "" : "none";
+  $("#simShooter").innerHTML = Array.from({ length: 12 }, (_, i) => i + 1).filter((i) => i !== G.myId).map((i) => `<option>${i}</option>`).join("");
 }
-function renderClock(){
-  const ms = Math.max(0, G.endAt - Date.now()), m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60;
+function renderClock() {
+  const ms = Math.max(0, G.endAt - Date.now()), m = Math.floor(ms / 6e4), s = Math.floor(ms / 1e3) % 60;
   $("#hudClock").textContent = `${m}:${String(s).padStart(2, "0")}`;
 }
-function scoreTable(){
+function scoreTable() {
   const s = computeScore();
-  const players = (G.roster.length ? G.roster : [{ id:G.myId, name:me.name, team:G.myTeam }])
-    .slice().sort((a, b) => (s.kills[b.id] || 0) - (s.kills[a.id] || 0) || (s.deaths[a.id] || 0) - (s.deaths[b.id] || 0));
-  const teams = G.settings.mode === "tdm"
-    ? `<p style="font-size:20px;font-weight:700"><span class="pill A">Blue ${s.teams.A}</span> &nbsp; <span class="pill B">Red ${s.teams.B}</span></p>` : "";
-  return teams + `<table><tr><th>Player</th><th class="n">Kills</th><th class="n">Deaths</th></tr>` +
-    players.map(p => `<tr><td>#${p.id} ${esc(p.name)} ${G.settings.mode === "tdm" ? `<span class="pill ${p.team}">${p.team}</span>` : ""}</td><td class="n">${s.kills[p.id] || 0}</td><td class="n">${s.deaths[p.id] || 0}</td></tr>`).join("") + `</table>` +
-    (G.offline ? `<p class="muted">Offline: this phone only knows its own deaths and the kills it was told about. Compare phones to settle it.</p>` : "");
+  const players = (G.roster.length ? G.roster : [{ id: G.myId, name: me.name, team: G.myTeam }]).slice().sort((a, b) => (s.kills[b.id] || 0) - (s.kills[a.id] || 0) || (s.deaths[a.id] || 0) - (s.deaths[b.id] || 0));
+  const teams = G.settings.mode === "tdm" ? `<p style="font-size:20px;font-weight:700"><span class="pill A">Blue ${s.teams.A}</span> &nbsp; <span class="pill B">Red ${s.teams.B}</span></p>` : "";
+  return teams + `<table><tr><th>Player</th><th class="n">Kills</th><th class="n">Deaths</th></tr>` + players.map((p) => `<tr><td>#${p.id} ${esc(p.name)} ${G.settings.mode === "tdm" ? `<span class="pill ${p.team}">${p.team}</span>` : ""}</td><td class="n">${s.kills[p.id] || 0}</td><td class="n">${s.deaths[p.id] || 0}</td></tr>`).join("") + `</table>` + (G.offline ? `<p class="muted">Offline: this phone only knows its own deaths and the kills it was told about. Compare phones to settle it.</p>` : "");
 }
-function renderScore(){ $("#scoreMini").innerHTML = scoreTable(); }
-function renderFinal(){ $("#finalScore").innerHTML = scoreTable(); }
-
-function renderLab(ev){
+function renderScore() {
+  $("#scoreMini").innerHTML = scoreTable();
+}
+function renderFinal() {
+  $("#finalScore").innerHTML = scoreTable();
+}
+function renderLab(ev) {
   if (!$("#tab-lab").classList.contains("on")) return;
   $("#labRaw").textContent = [...ev.bytes].map(h2).join(" ");
-  const t = { ...ev.t }; delete t.hit1; delete t.hit2;
+  const t = { ...ev.t };
+  delete t.hit1;
+  delete t.hit2;
   $("#labParsed").textContent = JSON.stringify(t);
   if (ev.t.hit1 || ev.t.hit2) $("#labHits").textContent = JSON.stringify([ev.t.hit1, ev.t.hit2]) + "\n" + $("#labHits").textContent.split("\n").slice(0, 8).join("\n");
 }
-
-/* ============================ WIRING ============================ */
-$$(".tabs button").forEach(b => b.onclick = () => {
-  $$(".tabs button").forEach(x => x.classList.toggle("on", x === b));
-  $$("section").forEach(s => s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
+$$(".tabs button").forEach((b) => b.onclick = () => {
+  $$(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  $$("section").forEach((s) => s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
 });
-document.addEventListener("pointerdown", () => Sfx.unlock(), { capture:true });
-
+document.addEventListener("pointerdown", () => Sfx.unlock(), { capture: true });
 $("#name").value = me.name;
-$("#name").oninput = e => { me.name = e.target.value.trim().slice(0, 14); store.set("name", me.name); };
-$("#bleHint").textContent = navigator.bluetooth
-  ? "Turn the gun on, then tap Connect. If it doesn't appear, try Show all devices."
-  : "This browser can't reach Bluetooth. Use Chrome on Android, or Bluefy on iPhone. You can still try the app with a simulated gun.";
-
-async function connectGun(kind){
-  Sfx.unlock();
-  try{
-    const g = kind === "sim" ? new SimGun() : new BleGun();
-    g.on(onGunEvent);
-    await g.pick(kind === "all");
-    gun = g; renderGunStatus();
-    if (gun.connected) setTimeout(() => gun.kick(gun.last?.playerId || 0), 600);   // one kick = this is your gun
-  }catch(e){
-    if (e && e.name === "NotFoundError") return;              // user closed the picker
-    toast(String(e.message || e)); log("connect failed", String(e));
+$("#name").oninput = (e) => {
+  me.name = e.target.value.trim().slice(0, 14);
+  store.set("name", me.name);
+};
+$("#bleHint").textContent = navigator.bluetooth ? "Turn the gun on, then tap Connect. If it doesn't appear, try Show all devices." : "This browser can't reach Bluetooth. Use Chrome on Android, or Bluefy on iPhone. You can still try the app with a simulated gun.";
+function gunMsg(text, kind) {
+  const m = $("#gunMsg");
+  m.textContent = text || "";
+  m.className = "msg" + (kind ? " " + kind : "");
+}
+let connecting = false;
+function connectGun(kind) {
+  if (connecting) return;
+  try {
+    Sfx.unlock();
+  } catch (e) {
   }
+  const g = kind === "sim" ? new SimGun() : new BleGun();
+  g.on(onGunEvent);
+  if (kind !== "sim" && !navigator.bluetooth) {
+    gunMsg("This browser has no Bluetooth access. On iPhone open the link in Bluefy; on Android use Chrome.", "err");
+    return;
+  }
+  connecting = true;
+  gunMsg(kind === "sim" ? "Starting simulated gun\u2026" : "Opening the Bluetooth list\u2026");
+  let p;
+  try {
+    p = g.pick(kind === "all");
+  } catch (e) {
+    p = Promise.reject(e);
+  }
+  p.then(() => {
+    if (gun && gun !== g && gun.disconnect) gun.disconnect();
+    gun = g;
+    renderGunStatus();
+    gunMsg(g instanceof SimGun ? "Simulated gun ready." : "Connected. The gun should kick once.", "ok");
+    if (g.connected && !(g instanceof SimGun)) setTimeout(() => g.kick(g.last && g.last.playerId || 0), 700);
+  }).catch((e) => {
+    const name = e && e.name, msg = String(e && e.message || e);
+    log("connect failed", name, msg);
+    if (name === "NotFoundError" && /cancel/i.test(msg)) gunMsg("");
+    else if (name === "NotFoundError") gunMsg("No gun found. Make sure it's on (green light), then try Show all devices.", "err");
+    else if (name === "SecurityError") gunMsg("Bluetooth was blocked. Allow Bluetooth for this browser in your phone's settings, then try again.", "err");
+    else gunMsg("Couldn't connect: " + msg + ". Turn the gun off and on, then try again.", "err");
+  }).then(() => {
+    connecting = false;
+  });
 }
 $("#btnConnect").onclick = () => connectGun("ble");
 $("#btnConnectAll").onclick = () => connectGun("all");
 $("#btnSim").onclick = () => connectGun("sim");
-
-function needBasics(){
-  if (!me.name){ toast("Enter a name first"); $("#name").focus(); return false; }
-  if (!gun){ toast("Connect a gun first (or use the simulated gun)"); return false; }
+function needBasics() {
+  if (!me.name) {
+    toast("Enter a name first");
+    $("#name").focus();
+    return false;
+  }
+  if (!gun) {
+    toast("Connect a gun first (or use the simulated gun)");
+    return false;
+  }
   return true;
 }
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 $("#btnHost").onclick = () => {
   if (!needBasics()) return;
-  G.offline = false; G.host = true;
-  G.room = Array.from({ length:4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
-  G.roster = [{ cid:me.cid, name:me.name, gun:gun.type, id:1, team:"A" }];
-  G.myId = 1; G.myTeam = "A"; G.phase = "lobby";
-  Net.connect(); keepAwake(); show("lobby"); renderLobby(); gunSetup(true);
+  G.offline = false;
+  G.host = true;
+  G.room = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
+  G.roster = [{ cid: me.cid, name: me.name, gun: gun.type, id: 1, team: "A" }];
+  G.myId = 1;
+  G.myTeam = "A";
+  G.phase = "lobby";
+  Net.connect();
+  keepAwake();
+  show("lobby");
+  renderLobby();
+  gunSetup(true);
 };
 $("#btnJoin").onclick = () => {
   if (!needBasics()) return;
   const code = $("#joinCode").value.trim().toUpperCase();
-  if (!/^[A-Z]{4}$/.test(code)){ toast("Room codes are 4 letters"); return; }
-  G.offline = false; G.host = false; G.room = code; G.roster = []; G.myId = 0; G.phase = "lobby";
+  if (!/^[A-Z]{4}$/.test(code)) {
+    toast("Room codes are 4 letters");
+    return;
+  }
+  G.offline = false;
+  G.host = false;
+  G.room = code;
+  G.roster = [];
+  G.myId = 0;
+  G.phase = "lobby";
+  G.joinedAt = Date.now();
   store.set("room", code);
-  Net.connect(); keepAwake(); show("lobby"); renderLobby();
+  Net.connect();
+  keepAwake();
+  show("lobby");
+  renderLobby();
 };
 $("#btnOffline").onclick = () => {
   if (!needBasics()) return;
-  G.offline = true; G.host = false; G.room = null; G.phase = "lobby";
-  $("#offId").innerHTML = Array.from({ length:16 }, (_, i) => `<option value="${i + 1}">#${i + 1}</option>`).join("");
-  G.myId = store.get("offId", 1); G.myTeam = store.get("offTeam", "A");
-  $("#offId").value = G.myId; $("#offTeam").value = G.myTeam;
-  G.roster = [{ cid:me.cid, name:me.name, gun:gun.type, id:G.myId, team:G.myTeam }];
-  setNet(false); keepAwake(); show("lobby"); renderLobby(); gunSetup(true);
+  G.offline = true;
+  G.host = false;
+  G.room = null;
+  G.phase = "lobby";
+  $("#offId").innerHTML = Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">#${i + 1}</option>`).join("");
+  G.myId = store.get("offId", 1);
+  G.myTeam = store.get("offTeam", "A");
+  $("#offId").value = G.myId;
+  $("#offTeam").value = G.myTeam;
+  G.roster = [{ cid: me.cid, name: me.name, gun: gun.type, id: G.myId, team: G.myTeam }];
+  setNet(false);
+  keepAwake();
+  show("lobby");
+  renderLobby();
+  gunSetup(true);
 };
-$("#offId").onchange = e => { G.myId = +e.target.value; store.set("offId", G.myId); G.roster[0].id = G.myId; gunSetup(true); renderLobby(); };
-$("#offTeam").onchange = e => { G.myTeam = e.target.value; store.set("offTeam", G.myTeam); G.roster[0].team = G.myTeam; renderLobby(); };
+$("#offId").onchange = (e) => {
+  G.myId = +e.target.value;
+  store.set("offId", G.myId);
+  G.roster[0].id = G.myId;
+  gunSetup(true);
+  renderLobby();
+};
+$("#offTeam").onchange = (e) => {
+  G.myTeam = e.target.value;
+  store.set("offTeam", G.myTeam);
+  G.roster[0].team = G.myTeam;
+  renderLobby();
+};
 $("#joinCode").value = store.get("room", "");
-
-["#s-mode", "#s-arena", "#s-time", "#s-kills", "#s-health", "#s-respawn", "#s-gren", "#s-ff", "#s-marker"].forEach(id => $(id).onchange = readRulesForm);
-$("#roster").onclick = e => {
+["#s-mode", "#s-arena", "#s-time", "#s-kills", "#s-health", "#s-respawn", "#s-gren", "#s-ff", "#s-marker"].forEach((id) => $(id).onchange = readRulesForm);
+$("#roster").onclick = (e) => {
   if (!G.host || G.settings.mode !== "tdm") return;
-  const row = e.target.closest("[data-cid]"); if (!row) return;
-  const p = G.roster.find(x => x.cid === row.dataset.cid); if (!p) return;
+  const row = e.target.closest("[data-cid]");
+  if (!row) return;
+  const p = G.roster.find((x) => x.cid === row.dataset.cid);
+  if (!p) return;
   p.team = p.team === "A" ? "B" : "A";
   if (p.cid === me.cid) G.myTeam = p.team;
-  publishRoster(); renderLobby();
+  publishRoster();
+  renderLobby();
 };
 $("#btnStart").onclick = () => {
-  if (!gun?.connected && !(gun instanceof SimGun)){ toast("Your gun isn't connected"); return; }
+  if (!(gun == null ? void 0 : gun.connected) && !(gun instanceof SimGun)) {
+    toast("Your gun isn't connected");
+    return;
+  }
   if (!G.offline && G.roster.length < 2 && !confirm("Only you are in the room. Start anyway?")) return;
-  readRulesForm(); startAsHost();
+  readRulesForm();
+  startAsHost();
 };
 $("#btnLeave").onclick = () => {
-  if (G.host && !G.offline){ Net.clear("roster"); Net.clear("start"); }
-  Net.disconnect(); G.phase = "setup"; G.room = null; G.host = false; G.offline = false;
+  if (G.host && !G.offline) {
+    Net.clear("roster");
+    Net.clear("start");
+  }
+  Net.disconnect();
+  G.phase = "setup";
+  G.room = null;
+  G.host = false;
+  G.offline = false;
   gun && G.myId && gun.lock(G.myId);
-  show("setup"); setNet(false);
+  show("setup");
+  setNet(false);
 };
 $("#btnEnd").onclick = () => {
   if (!confirm("End the match for everyone?")) return;
-  if (!G.offline){ Net.send({ t:"END", gameId:G.gameId }); Net.clear("start"); }
+  if (!G.offline) {
+    Net.send({ t: "END", gameId: G.gameId });
+    Net.clear("start");
+  }
   endMatch("Match ended");
 };
 $("#btnAgain").onclick = () => {
   G.phase = "lobby";
-  if (G.host && !G.offline){ Net.clear("start"); publishRoster(); }
-  gunSetup(true); show("lobby"); renderLobby();
+  if (G.host && !G.offline) {
+    Net.clear("start");
+    publishRoster();
+  }
+  gunSetup(true);
+  show("lobby");
+  renderLobby();
 };
 $("#btnIr").onclick = cycleIr;
 $("#btnFire").onclick = cycleFire;
-
-$$("[data-sim]").forEach(b => b.onclick = () => {
+$$("[data-sim]").forEach((b) => b.onclick = () => {
   if (!(gun instanceof SimGun)) return;
   const a = b.dataset.sim;
   if (a === "fire") gun.pull();
@@ -1001,10 +1574,15 @@ $$("[data-sim]").forEach(b => b.onclick = () => {
   if (a === "grenade") gun.grenade();
   if (a === "hit") gun.hitBy(+$("#simShooter").value);
 });
-
-const hex = id => { const v = parseInt($(id).value, 16); return isNaN(v) ? 0 : v & 0xFF; };
-$$("[data-lab]").forEach(b => b.onclick = () => {
-  if (!gun){ toast("Connect a gun on the Play tab first"); return; }
+const hex = (id) => {
+  const v = parseInt($(id).value, 16);
+  return isNaN(v) ? 0 : v & 255;
+};
+$$("[data-lab]").forEach((b) => b.onclick = () => {
+  if (!gun) {
+    toast("Connect a gun on the Play tab first");
+    return;
+  }
   const id = Math.max(1, Math.min(63, +$("#labId").value || 1)), shots = Math.max(1, Math.min(255, +$("#labShots").value || 30));
   const a = b.dataset.lab;
   if (a === "setid") gun.setId(id);
@@ -1015,12 +1593,13 @@ $$("[data-lab]").forEach(b => b.onclick = () => {
   if (a === "recoilOff") gun.recoil(false);
   if (a === "recoilOn") gun.recoil(true);
   if (a === "off" && confirm("Power the gun off?")) gun.powerOff(id);
-  if (a === "config") gun.writeConfig(weaponConfigBytes({ shots:hex("#cShots"), rate:hex("#cRate"), longIR:hex("#cLong"), coneIR:hex("#cCone"), flash:hex("#cFlash"), recoil:Math.max(0x10, hex("#cRecoil")) }));
+  if (a === "config") gun.writeConfig(weaponConfigBytes({ shots: hex("#cShots"), rate: hex("#cRate"), longIR: hex("#cLong"), coneIR: hex("#cCone"), flash: hex("#cFlash"), recoil: Math.max(16, hex("#cRecoil")) }));
   log("lab:", a, "id", id);
 });
-
 if (!window.mqtt) log("MQTT library failed to load; only offline games will work");
-renderGunStatus(); setNet(false);
+renderGunStatus();
+setNet(false);
+$("#ver").textContent = VERSION;
 </script>
 </body>
 </html>
