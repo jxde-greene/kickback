@@ -102,7 +102,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
 <header>
   <span class="net" id="netDot" title="network"></span>
   <h1>KICK<b>BACK</b></h1>
-  <span id="ver">v0.2 loading…</span>
+  <span id="ver">v0.3 loading…</span>
   <nav class="tabs">
     <button data-tab="play" class="on">Play</button>
     <button data-tab="lab">Gun Lab</button>
@@ -137,6 +137,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       <div class="row"><input id="joinCode" maxlength="4" placeholder="ABCD" style="text-transform:uppercase"><button id="btnJoin" style="flex:none">Join</button></div>
       <button class="big" id="btnOffline">Play with no network</button>
     </div>
+    <div id="tapDbg" class="muted" style="font-size:12px;margin:4px 0 12px;word-break:break-all"></div>
   </div>
 
   <!-- Lobby -->
@@ -281,7 +282,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
 <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
 <script>
 "use strict";
-const VERSION = "v0.2";
+const VERSION = "v0.3";
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s != null ? s : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -1522,12 +1523,12 @@ $("#roster").onclick = (e) => {
   publishRoster();
   renderLobby();
 };
-$("#btnStart").onclick = () => {
+$("#btnStart").onclick = function() {
   if (!(gun == null ? void 0 : gun.connected) && !(gun instanceof SimGun)) {
     toast("Your gun isn't connected");
     return;
   }
-  if (!G.offline && G.roster.length < 2 && !confirm("Only you are in the room. Start anyway?")) return;
+  if (!G.offline && G.roster.length < 2 && !askTwice(this, "Only you here. Tap again to start")) return;
   readRulesForm();
   startAsHost();
 };
@@ -1545,8 +1546,8 @@ $("#btnLeave").onclick = () => {
   show("setup");
   setNet(false);
 };
-$("#btnEnd").onclick = () => {
-  if (!confirm("End the match for everyone?")) return;
+$("#btnEnd").onclick = function() {
+  if (!askTwice(this, "Tap again to end for everyone")) return;
   if (!G.offline) {
     Net.send({ t: "END", gameId: G.gameId });
     Net.clear("start");
@@ -1592,10 +1593,78 @@ $$("[data-lab]").forEach((b) => b.onclick = () => {
   if (a === "flash") gun.flash(id);
   if (a === "recoilOff") gun.recoil(false);
   if (a === "recoilOn") gun.recoil(true);
-  if (a === "off" && confirm("Power the gun off?")) gun.powerOff(id);
+  if (a === "off" && askTwice(b, "Tap again to power off")) gun.powerOff(id);
   if (a === "config") gun.writeConfig(weaponConfigBytes({ shots: hex("#cShots"), rate: hex("#cRate"), longIR: hex("#cLong"), coneIR: hex("#cCone"), flash: hex("#cFlash"), recoil: Math.max(16, hex("#cRecoil")) }));
   log("lab:", a, "id", id);
 });
+function askTwice(btn, prompt) {
+  if (btn._armed && Date.now() - btn._armed < 3e3) {
+    btn._armed = 0;
+    btn.textContent = btn._label;
+    return true;
+  }
+  btn._label = btn._label || btn.textContent;
+  btn._armed = Date.now();
+  btn.textContent = prompt;
+  setTimeout(() => {
+    if (btn._armed) {
+      btn._armed = 0;
+      btn.textContent = btn._label;
+    }
+  }, 3e3);
+  return false;
+}
+const tapTrail = [];
+function tapNote(txt) {
+  tapTrail.unshift(txt);
+  tapTrail.length = Math.min(tapTrail.length, 4);
+  const el = $("#tapDbg");
+  if (el) el.textContent = "Taps: " + tapTrail.join("  \xB7  ");
+}
+const tagOf = (el) => !el ? "?" : el.id ? "#" + el.id : el.tagName ? el.tagName.toLowerCase() + (el.dataset && (el.dataset.sim || el.dataset.lab || el.dataset.tab) ? "[" + (el.dataset.sim || el.dataset.lab || el.dataset.tab) + "]" : "") : "?";
+let lastTouchFire = { el: null, at: 0 };
+function enableTouch(el) {
+  if (!el || el._touchOn) return;
+  el._touchOn = true;
+  let sx = 0, sy = 0, moved = false;
+  el.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    sx = t.clientX;
+    sy = t.clientY;
+    moved = false;
+  }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) moved = true;
+  }, { passive: true });
+  el.addEventListener("touchend", (e) => {
+    if (moved || el.disabled || typeof el.onclick !== "function") return;
+    if (e.cancelable) e.preventDefault();
+    lastTouchFire = { el, at: Date.now() };
+    tapNote("touch\u2192" + tagOf(el));
+    try {
+      Sfx.unlock();
+    } catch (err) {
+    }
+    try {
+      el.onclick.call(el, e);
+    } catch (err) {
+      window.kbShowError && kbShowError(String(err && err.stack || err));
+    }
+  }, { passive: false });
+}
+window.addEventListener("click", (e) => {
+  if (lastTouchFire.el && Date.now() - lastTouchFire.at < 700 && lastTouchFire.el.contains(e.target)) {
+    e.stopPropagation();
+    e.preventDefault();
+  } else tapNote("click\u2192" + tagOf(e.target.closest ? e.target.closest("button,[id]") || e.target : e.target));
+}, true);
+window.addEventListener("touchstart", (e) => {
+  const t = e.touches[0], under = document.elementFromPoint(t.clientX, t.clientY);
+  tapNote("down@" + tagOf(under && under.closest ? under.closest("button,input,select,[id]") || under : under));
+}, { capture: true, passive: true });
+$$("button").forEach(enableTouch);
+enableTouch($("#roster"));
 if (!window.mqtt) log("MQTT library failed to load; only offline games will work");
 renderGunStatus();
 setNet(false);
