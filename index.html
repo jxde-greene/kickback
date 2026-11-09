@@ -78,10 +78,8 @@ label{display:block;font-size:13px;color:var(--quiet);margin:10px 0 4px}
 #hud{text-align:center}
 .state{font-size:22px;font-weight:800;letter-spacing:2px;margin:10px 0}
 .state.dead{color:var(--bad)} .state.alive{color:var(--good)}
-.hp{height:34px;border-radius:10px;background:#0d1014;border:1px solid var(--line);overflow:hidden;margin:8px 0}
-.hp i{display:block;height:100%;background:var(--good);transition:width .15s}
-.hp i.low{background:var(--bad)}
 .bigstats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.bigstats b.hot{color:var(--accent)}
 .bigstats div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
 .bigstats b{display:block;font-size:34px;line-height:1.1}
 .bigstats span{font-size:12px;color:var(--quiet);text-transform:uppercase;letter-spacing:.8px}
@@ -93,8 +91,49 @@ td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
 th{color:var(--quiet);font-weight:500;font-size:13px}
 td.n,th.n{text-align:right}
 pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,monospace;background:#0d1014;border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;max-height:260px;overflow:auto}
-.flash{animation:fl .25s}
-@keyframes fl{from{background:#5a1010}to{background:var(--bg)}}
+/* full-screen feedback layers (never block taps) */
+#fx{position:fixed;inset:0;pointer-events:none;z-index:30;overflow:hidden}
+#fx>i{position:absolute;opacity:0;will-change:opacity}
+#fx .hitflash{inset:0;background:radial-gradient(ellipse at center,rgba(255,40,40,.18) 25%,rgba(255,0,0,.85) 100%)}
+#fx .dir-f{left:0;right:0;top:0;height:26%;background:linear-gradient(180deg,rgba(255,25,25,.95),transparent)}
+#fx .dir-l{left:0;top:0;bottom:0;width:30%;background:linear-gradient(90deg,rgba(255,25,25,.95),transparent)}
+#fx .dir-r{right:0;top:0;bottom:0;width:30%;background:linear-gradient(270deg,rgba(255,25,25,.95),transparent)}
+#fx .dir-b{left:0;right:0;bottom:0;height:26%;background:linear-gradient(0deg,rgba(255,25,25,.95),transparent)}
+#fx .lowhp{inset:0;box-shadow:inset 0 0 90px 26px rgba(255,0,0,.6)}
+body.lowhp #fx .lowhp{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.2}50%{opacity:.95}}
+#fx .deadtint{inset:0;background:rgba(70,0,0,.55);transition:opacity .4s}
+body.dead #fx .deadtint{opacity:1}
+#fx .heal{inset:0;background:radial-gradient(ellipse at center,rgba(62,207,110,.05) 30%,rgba(62,207,110,.6) 100%)}
+#fx .marker{left:50%;top:38%;width:76px;height:76px;margin:-38px 0 0 -38px}
+#fx .marker:before,#fx .marker:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:6px;margin-left:-3px;background:#fff;border-radius:3px;box-shadow:0 0 10px #fff}
+#fx .marker:before{transform:rotate(45deg)} #fx .marker:after{transform:rotate(-45deg)}
+#fx .marker.kill:before,#fx .marker.kill:after{background:var(--bad);box-shadow:0 0 14px var(--bad)}
+#fx .shield{inset:0;box-shadow:inset 0 0 60px 14px rgba(80,160,255,.55)}
+body.shield #fx .shield{opacity:1}
+/* HUD */
+.ammo{display:flex;align-items:baseline;justify-content:center;gap:6px;margin:6px 0 2px}
+.ammo b{font-size:84px;line-height:1;font-weight:800;font-variant-numeric:tabular-nums}
+.ammo span{font-size:22px;color:var(--quiet)}
+.ammo.low b{color:var(--accent)} .ammo.empty b{color:var(--bad)}
+.reload{height:10px;border-radius:5px;background:#0d1014;border:1px solid var(--line);overflow:hidden;margin:4px 20% 0;visibility:hidden}
+.reload i{display:block;height:100%;width:0;background:var(--accent)}
+.reload.on{visibility:visible}
+.prompt{font-size:20px;font-weight:800;letter-spacing:3px;min-height:28px;color:var(--bad)}
+.prompt.blink{animation:blink .7s steps(2) infinite}
+@keyframes blink{50%{opacity:.15}}
+.hp{display:flex;gap:4px;background:none;border:0;height:30px}
+.hp i{flex:1;border-radius:5px;background:var(--good);transition:background .15s,opacity .15s}
+.hp i.gone{background:#2a313b;opacity:.6}
+.hp.low i:not(.gone){background:var(--bad)}
+.death{display:none;margin:6px 0 10px}
+body.dead .death{display:block}
+body.dead #ammoBox,body.dead #reloadBar,body.dead #hudPrompt{display:none}
+.death .t{font-size:34px;font-weight:900;letter-spacing:4px;color:var(--bad)}
+.death .by{font-size:18px;color:var(--ink);margin-top:2px}
+.toggle{display:flex;align-items:center;gap:10px;margin:10px 0}
+.toggle input{width:auto}
+input[type=range]{padding:0;height:34px;background:none;border:0}
 .toast{position:fixed;left:16px;right:16px;top:calc(60px + env(safe-area-inset-top));background:#2b323c;border:1px solid var(--accent);border-radius:12px;padding:14px;font-size:16px;display:none;z-index:20;pointer-events:none;box-shadow:0 6px 24px #0008}
 .toast.on{display:block}
 .sim button{padding:10px 8px;font-size:14px}
@@ -105,7 +144,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
 <header>
   <span class="net" id="netDot" title="network"></span>
   <h1>KICK<b>BACK</b></h1>
-  <span id="ver">v0.5 loading…</span>
+  <span id="ver">v0.6 loading…</span>
   <nav class="tabs">
     <button data-tab="play" class="on">Play</button>
     <button data-tab="lab">Gun Lab</button>
@@ -132,6 +171,15 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       </div>
       <div class="msg" id="gunMsg"></div>
       <p class="muted" id="bleHint"></p>
+    </div>
+    <div class="card">
+      <h2>Sound &amp; feel</h2>
+      <label for="vol">Volume</label>
+      <input type="range" id="vol" min="0" max="100" step="5">
+      <label class="toggle"><input type="checkbox" id="optVoice"> Voice callouts</label>
+      <label class="toggle"><input type="checkbox" id="optKick"> Gun kicks when you're hit</label>
+      <button id="btnTestSfx" style="width:100%">Test sounds</button>
+      <p class="muted">iPhone: sound plays even with the silent switch on once you tap any button. Earbuds recommended.</p>
     </div>
     <div class="card">
       <h2>3 · Game</h2>
@@ -175,6 +223,8 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
           <div><label>Respawn (sec)</label><input id="s-respawn" type="number" min="0" max="120"></div>
           <div><label>Grenade damage</label><input id="s-gren" type="number" min="0" max="99"></div>
           <div><label>Friendly fire</label><select id="s-ff"><option value="0">Off</option><option value="1">On</option></select></div>
+          <div><label>Reload time (sec)</label><input id="s-reload" type="number" min="0" max="10" step="0.5"></div>
+          <div><label>Spawn shield (sec)</label><input id="s-shield" type="number" min="0" max="10"></div>
         </div>
         <label><input type="checkbox" id="s-marker" style="width:auto"> Hit-marker sound for shooters</label>
       </div>
@@ -191,12 +241,15 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
         <span id="hudTeam"></span><span id="hudClock">--:--</span>
       </div>
       <div class="state" id="hudState">GET READY</div>
-      <div id="hudRespawn" class="respawn" style="display:none"></div>
-      <div class="hp"><i id="hpBar" style="width:100%"></i></div>
+      <div class="death"><div class="t">ELIMINATED</div><div class="by" id="killedBy"></div><div id="hudRespawn" class="respawn"></div></div>
+      <div class="hp" id="hpBar"></div>
+      <div class="ammo" id="ammoBox"><b id="hudAmmo">0</b><span id="hudClip">/ 15</span></div>
+      <div class="reload" id="reloadBar"><i></i></div>
+      <div class="prompt" id="hudPrompt"></div>
       <div class="bigstats">
-        <div><b id="hudAmmo">0</b><span>Ammo</span></div>
         <div><b id="hudKills">0</b><span>Kills</span></div>
         <div><b id="hudDeaths">0</b><span>Deaths</span></div>
+        <div><b id="hudStreak">0</b><span>Streak</span></div>
       </div>
       <div class="row">
         <button id="btnIr">IR: Hybrid</button>
@@ -280,12 +333,13 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
   </div>
 </section>
 
+<div id="fx"><i class="deadtint"></i><i class="lowhp"></i><i class="shield"></i><i class="hitflash"></i><i class="dir-f"></i><i class="dir-l"></i><i class="dir-r"></i><i class="dir-b"></i><i class="heal"></i><i class="marker"></i></div>
 <div class="toast" id="toast"></div>
 
 <script id="kbMain">
 "use strict";
 (() => {
-  const VERSION = "v0.5";
+  const VERSION = "v0.6";
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
   const esc = (s) => String(s != null ? s : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -381,7 +435,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     return pad20([profile, 0, 9, o.shots, o.rate, o.longIR, o.coneIR, flash, 255, recoil, 1, 52]);
   }
   function feedbackConfigBytes(recoilOn) {
-    return pad20([16, 0, 2, recoilOn ? 3 : 2, 255]);
+    return pad20([16, 0, 2, recoilOn ? 7 : 6, 255]);
   }
   const IR_MODES = {
     outdoor: { label: "Outdoor", longIR: 255, coneIR: 200 },
@@ -641,7 +695,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       if (hit) {
         b[8] = hit[0];
         b[9] = hit[1];
-        b[10] = 64 | ++s.hc & 15;
+        b[10] = (hit[2] || 4) << 4 | ++s.hc & 15;
       }
       this.handleTelemetry(b);
     }
@@ -679,103 +733,302 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       this.s.th++;
       this.send();
     }
-    hitBy(shooter) {
+    hitBy(shooter, side) {
       this.shot = (this.shot || 0) + 1 & 7;
-      this.send([192 | 56 | this.shot, shooter << 2]);
+      this.send([192 | 56 | this.shot, shooter << 2, side || [1, 2, 4, 8][Math.floor(Math.random() * 4)]]);
     }
     grenade() {
       this.send([49, 167]);
     }
   }
   const h2 = (n) => n.toString(16).padStart(2, "0").toUpperCase();
+  const prefs = { vol: store.get("vol", 0.8), voice: store.get("voice", true), kick: store.get("kick", true) };
   const Sfx = {
     ctx: null,
+    out: null,
+    noiseBuf: null,
     unlock() {
+      AudioSession.unlock();
       if (!this.ctx) {
         const C = window.AudioContext || window.webkitAudioContext;
-        if (C) this.ctx = new C();
+        if (!C) return;
+        this.ctx = new C();
+        const comp = this.ctx.createDynamicsCompressor();
+        comp.threshold.value = -14;
+        comp.ratio.value = 6;
+        comp.connect(this.ctx.destination);
+        this.out = this.ctx.createGain();
+        this.out.gain.value = prefs.vol;
+        this.out.connect(comp);
+        const len = this.ctx.sampleRate, buf = this.ctx.createBuffer(1, len, len), d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        this.noiseBuf = buf;
       }
-      if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+      if (this.ctx.state === "suspended") this.ctx.resume();
     },
-    tone(freq, dur, type = "square", vol = 0.2, slide = 0, delay = 0) {
+    setVol(v) {
+      prefs.vol = v;
+      store.set("vol", v);
+      if (this.out) this.out.gain.value = v;
+    },
+    now() {
+      return this.ctx ? this.ctx.currentTime : 0;
+    },
+    env(g, t, peak, attack, decay) {
+      g.gain.setValueAtTime(1e-4, t);
+      g.gain.exponentialRampToValueAtTime(Math.max(2e-4, peak), t + attack);
+      g.gain.exponentialRampToValueAtTime(1e-4, t + attack + decay);
+    },
+    // filtered noise burst; f2 sweeps the filter
+    noise(t, dur, o) {
       const c = this.ctx;
       if (!c) return;
-      const t0 = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
-      o.type = type;
-      o.frequency.setValueAtTime(freq, t0);
-      if (slide) o.frequency.linearRampToValueAtTime(Math.max(40, freq + slide), t0 + dur);
-      g.gain.setValueAtTime(vol, t0);
-      g.gain.exponentialRampToValueAtTime(1e-4, t0 + dur);
-      o.connect(g).connect(c.destination);
-      o.start(t0);
-      o.stop(t0 + dur + 0.02);
+      const src = c.createBufferSource();
+      src.buffer = this.noiseBuf;
+      const f = c.createBiquadFilter();
+      f.type = o.type || "lowpass";
+      f.Q.value = o.q || 0.7;
+      f.frequency.setValueAtTime(o.f || 1e3, t);
+      if (o.f2) f.frequency.exponentialRampToValueAtTime(o.f2, t + dur);
+      const g = c.createGain();
+      this.env(g, t, o.vol || 0.5, o.a || 2e-3, dur);
+      src.connect(f).connect(g).connect(this.out);
+      src.start(t, Math.random() * 0.5);
+      src.stop(t + dur + 0.05);
     },
-    shot() {
-      this.tone(900, 0.06, "square", 0.05, -600);
+    osc(t, dur, o) {
+      const c = this.ctx;
+      if (!c) return;
+      const n = c.createOscillator();
+      n.type = o.type || "sine";
+      n.frequency.setValueAtTime(o.f, t);
+      if (o.f2) n.frequency.exponentialRampToValueAtTime(o.f2, t + dur);
+      const g = c.createGain();
+      this.env(g, t, o.vol || 0.4, o.a || 3e-3, dur);
+      n.connect(g).connect(this.out);
+      n.start(t);
+      n.stop(t + dur + 0.05);
     },
-    empty() {
-      this.tone(260, 0.03, "square", 0.15);
+    at(d) {
+      return this.now() + (d || 0);
     },
+    // ---- weapons ----
+    shot(kind) {
+      const t = this.at();
+      if (kind === "rifle") {
+        this.noise(t, 0.06, { type: "highpass", f: 1800, vol: 0.55 });
+        this.osc(t, 0.16, { type: "triangle", f: 150, f2: 45, vol: 0.9 });
+        this.noise(t + 0.01, 0.28, { type: "lowpass", f: 2400, f2: 300, vol: 0.35 });
+      } else {
+        this.noise(t, 0.05, { type: "highpass", f: 2500, vol: 0.5 });
+        this.osc(t, 0.11, { type: "triangle", f: 220, f2: 70, vol: 0.7 });
+        this.noise(t + 0.01, 0.18, { type: "lowpass", f: 3e3, f2: 500, vol: 0.25 });
+      }
+    },
+    dry() {
+      const t = this.at();
+      this.noise(t, 0.025, { type: "bandpass", f: 3500, q: 6, vol: 0.6 });
+      this.osc(t, 0.03, { type: "square", f: 900, vol: 0.08 });
+    },
+    magOut() {
+      const t = this.at();
+      this.noise(t, 0.04, { type: "bandpass", f: 2200, q: 5, vol: 0.7 });
+      this.osc(t, 0.05, { type: "triangle", f: 1600, f2: 1200, vol: 0.15 });
+      this.noise(t + 0.09, 0.08, { type: "bandpass", f: 900, q: 3, vol: 0.4 });
+    },
+    magIn() {
+      const t = this.at();
+      this.noise(t, 0.05, { type: "bandpass", f: 1300, q: 4, vol: 0.9 });
+      this.osc(t, 0.07, { type: "triangle", f: 260, f2: 120, vol: 0.5 });
+    },
+    rack() {
+      const t = this.at();
+      this.noise(t, 0.035, { type: "bandpass", f: 2800, q: 6, vol: 0.8 });
+      this.noise(t + 0.11, 0.05, { type: "bandpass", f: 1900, q: 5, vol: 0.9 });
+      this.osc(t + 0.11, 0.05, { type: "triangle", f: 700, f2: 400, vol: 0.25 });
+    },
+    // ---- getting hit / dying ----
     hit() {
-      this.tone(180, 0.22, "sawtooth", 0.3, -80);
+      const t = this.at();
+      this.osc(t, 0.28, { type: "sine", f: 110, f2: 38, vol: 1 });
+      this.noise(t, 0.16, { type: "lowpass", f: 900, f2: 150, vol: 0.7 });
+      this.osc(t, 0.09, { type: "sawtooth", f: 320, f2: 140, vol: 0.18 });
     },
-    marker() {
-      this.tone(2e3, 0.04, "sine", 0.3);
-      this.tone(2600, 0.04, "sine", 0.2, 0, 0.05);
+    boom() {
+      const t = this.at();
+      this.noise(t, 1.4, { type: "lowpass", f: 1200, f2: 50, vol: 1, a: 0.01 });
+      this.osc(t, 0.9, { type: "sine", f: 70, f2: 25, vol: 1 });
     },
-    reload() {
-      this.tone(420, 0.07, "square", 0.12);
-      this.tone(620, 0.07, "square", 0.12, 0, 1.4);
+    heartbeat() {
+      const t = this.at();
+      this.osc(t, 0.12, { type: "sine", f: 62, f2: 45, vol: 0.9 });
+      this.osc(t + 0.22, 0.14, { type: "sine", f: 55, f2: 40, vol: 0.7 });
     },
     death() {
-      this.tone(420, 0.9, "sawtooth", 0.3, -360);
+      const t = this.at();
+      this.osc(t, 1.1, { type: "sawtooth", f: 380, f2: 55, vol: 0.35 });
+      this.osc(t, 1.1, { type: "sine", f: 190, f2: 30, vol: 0.6 });
+      this.noise(t, 0.6, { type: "lowpass", f: 1500, f2: 80, vol: 0.4 });
     },
     respawn() {
-      this.tone(440, 0.1, "sine", 0.3);
-      this.tone(660, 0.1, "sine", 0.3, 0, 0.12);
-      this.tone(880, 0.18, "sine", 0.3, 0, 0.24);
+      const t = this.at();
+      [440, 554, 659, 880].forEach((f, i) => this.osc(t + i * 0.07, 0.22, { type: "triangle", f, vol: 0.35 }));
+    },
+    shieldOff() {
+      const t = this.at();
+      this.osc(t, 0.25, { type: "sine", f: 900, f2: 450, vol: 0.2 });
+    },
+    // ---- landing hits ----
+    marker() {
+      const t = this.at();
+      this.osc(t, 0.05, { type: "sine", f: 2600, vol: 0.45 });
+      this.noise(t, 0.03, { type: "highpass", f: 6e3, vol: 0.3 });
+    },
+    kill() {
+      const t = this.at();
+      this.marker();
+      this.osc(t + 0.06, 0.18, { type: "triangle", f: 988, vol: 0.4 });
+      this.osc(t + 0.16, 0.35, { type: "triangle", f: 1480, vol: 0.4 });
+    },
+    // ---- UI / match ----
+    click() {
+      const t = this.at();
+      this.osc(t, 0.03, { type: "sine", f: 1200, vol: 0.15 });
+    },
+    tick() {
+      const t = this.at();
+      this.osc(t, 0.06, { type: "square", f: 1e3, vol: 0.12 });
     },
     beep() {
-      this.tone(880, 0.12, "sine", 0.3);
+      const t = this.at();
+      this.osc(t, 0.14, { type: "sine", f: 880, vol: 0.4 });
     },
     go() {
-      this.tone(1320, 0.45, "sine", 0.35);
+      const t = this.at();
+      this.osc(t, 0.5, { type: "triangle", f: 1320, vol: 0.45 });
+      this.osc(t, 0.5, { type: "sine", f: 660, vol: 0.3 });
+    },
+    warn() {
+      const t = this.at();
+      this.osc(t, 0.08, { type: "square", f: 520, vol: 0.12 });
+      this.osc(t + 0.11, 0.08, { type: "square", f: 520, vol: 0.12 });
+    },
+    win() {
+      const t = this.at();
+      [523, 659, 784, 1047].forEach((f, i) => this.osc(t + i * 0.12, 0.4, { type: "triangle", f, vol: 0.35 }));
+    },
+    lose() {
+      const t = this.at();
+      [392, 330, 262].forEach((f, i) => this.osc(t + i * 0.2, 0.5, { type: "triangle", f, vol: 0.35 }));
     },
     end() {
-      this.tone(660, 0.3, "triangle", 0.3);
-      this.tone(440, 0.6, "triangle", 0.3, 0, 0.32);
+      const t = this.at();
+      this.osc(t, 0.3, { type: "triangle", f: 660, vol: 0.3 });
+      this.osc(t + 0.32, 0.6, { type: "triangle", f: 440, vol: 0.3 });
     }
   };
-  function speak(text) {
+  let lastSpoken = 0;
+  function speak(text, important) {
+    if (!prefs.voice) return;
     try {
+      if (!("speechSynthesis" in window)) return;
+      if (!important && speechSynthesis.speaking && Date.now() - lastSpoken < 1500) return;
+      if (important) speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.1;
-      speechSynthesis.cancel();
+      u.rate = 1.15;
+      u.volume = Math.min(1, prefs.vol + 0.2);
       speechSynthesis.speak(u);
-    } catch {
+      lastSpoken = Date.now();
+    } catch (e) {
     }
   }
   function buzz(p) {
     try {
       navigator.vibrate && navigator.vibrate(p);
-    } catch {
+    } catch (e) {
     }
   }
+  const AudioSession = {
+    el: null,
+    unlock() {
+      try {
+        if (navigator.audioSession) navigator.audioSession.type = "playback";
+      } catch (e) {
+      }
+      if (this.el) {
+        if (this.el.paused) this.el.play().catch(() => {
+        });
+        return;
+      }
+      try {
+        const rate = 8e3, n = rate / 2, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+        const w = (o, str) => {
+          for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i));
+        };
+        w(0, "RIFF");
+        v.setUint32(4, 36 + n, true);
+        w(8, "WAVE");
+        w(12, "fmt ");
+        v.setUint32(16, 16, true);
+        v.setUint16(20, 1, true);
+        v.setUint16(22, 1, true);
+        v.setUint32(24, rate, true);
+        v.setUint32(28, rate, true);
+        v.setUint16(32, 1, true);
+        v.setUint16(34, 8, true);
+        w(36, "data");
+        v.setUint32(40, n, true);
+        for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+        const a = document.createElement("audio");
+        a.src = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+        a.loop = true;
+        a.setAttribute("playsinline", "");
+        a.preload = "auto";
+        a.play().catch(() => {
+        });
+        this.el = a;
+      } catch (e) {
+        log("audio session trick failed", String(e));
+      }
+    }
+  };
   let wakeLock = null;
+  let sleepVideo = null;
+  const TINY_MP4 = "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAANBbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAD6AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAmt0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAD6AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAA+gAAAAAAABAAAAAAHjbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAABAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABjm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAU5zdGJsAAAAtnN0c2QAAAAAAAAAAQAAAKZhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALGF2Y0MBQsAK/+EAFWdCwAraewEQAAADABAAAAMAQPEiagEABGjOD8gAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAAFhAAABYQAAAAYc3R0cwAAAAAAAAABAAAACAAAIAAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAACAAAAAEAAAA0c3RzegAAAAAAAAAAAAAACAAAAoMAAAAJAAAACQAAAAkAAAAJAAAACQAAAAkAAAAJAAAAFHN0Y28AAAAAAAAAAQAAA3EAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjYwLjE2LjEwMAAAAAhmcmVlAAACym1kYXQAAAJtBgX//2ncRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MSBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MSBtZT1oZXggc3VibWU9MiBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0wIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MCA4eDhkY3Q9MCBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0wIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0yIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9MTAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAADmWIhAV///8PRQABQt+AAAAABUGaIBX1AAAABUGaQBX1AAAABUGaYBX1AAAABUGagBT1AAAABUGaoBT1AAAABUGawBT1AAAABUGa4BL1";
   async function keepAwake() {
     try {
-      if ("wakeLock" in navigator && !wakeLock) {
-        wakeLock = await navigator.wakeLock.request("screen");
-        wakeLock.addEventListener("release", () => wakeLock = null);
+      if ("wakeLock" in navigator) {
+        if (!wakeLock) {
+          wakeLock = await navigator.wakeLock.request("screen");
+          wakeLock.addEventListener("release", () => {
+            wakeLock = null;
+          });
+        }
+        return;
       }
     } catch (e) {
-      log("wake lock unavailable");
+      log("wake lock refused, using video fallback");
+    }
+    try {
+      if (!sleepVideo) {
+        sleepVideo = document.createElement("video");
+        sleepVideo.setAttribute("playsinline", "");
+        sleepVideo.setAttribute("muted", "");
+        sleepVideo.muted = true;
+        sleepVideo.loop = true;
+        sleepVideo.style.cssText = "position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;bottom:0;left:0";
+        sleepVideo.src = TINY_MP4;
+        document.body.appendChild(sleepVideo);
+      }
+      if (sleepVideo.paused) sleepVideo.play().catch(() => {
+      });
+    } catch (e) {
     }
   }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && G.phase !== "setup") keepAwake();
   });
-  const DEFAULTS = { mode: "ffa", arena: "hybrid", time: 10, kills: 15, health: 10, respawn: 10, gren: 4, ff: false, marker: true };
+  const DEFAULTS = { mode: "ffa", arena: "hybrid", time: 10, kills: 15, health: 10, respawn: 10, gren: 4, ff: false, marker: true, reload: 2, shield: 3 };
   const me = { cid: store.get("cid", null) || Math.random().toString(36).slice(2, 10), name: store.get("name", "") };
   store.set("cid", me.cid);
   const G = {
@@ -956,6 +1209,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       case "HIT":
         if (m.to === G.myId && G.phase === "playing" && G.settings.marker) {
           Sfx.marker();
+          FX.marker(m.kill);
           buzz(20);
         }
         break;
@@ -1012,7 +1266,13 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     G.health = G.settings.health;
     G.alive = true;
     G.respawnAt = 0;
-    G.reloading = false;
+    cancelReload();
+    G.shieldUntil = 0;
+    G.said60 = false;
+    G.leader = null;
+    G.lastTickSec = -1;
+    G.lowWarned = false;
+    document.body.classList.remove("dead", "lowhp", "shield");
     G.irMode = G.settings.arena;
     G.fireMode = (gun == null ? void 0 : gun.type) === "rifle" ? "auto" : "single";
     G.phase = Date.now() < startAt ? "countdown" : "playing";
@@ -1033,25 +1293,55 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     Net.send({ t: "START", gameId, startAt, roster: G.roster, settings: G.settings }, "start", true);
     beginMatch(gameId, startAt);
   }
+  const FX = {
+    pulse(cls, peak, ms) {
+      const el = document.querySelector("#fx ." + cls);
+      if (!el) return;
+      if (el.animate) el.animate([{ opacity: peak }, { opacity: 0 }], { duration: ms, easing: "ease-out" });
+      else {
+        el.style.transition = "none";
+        el.style.opacity = peak;
+        void el.offsetWidth;
+        el.style.transition = "opacity " + ms + "ms ease-out";
+        el.style.opacity = 0;
+      }
+    },
+    marker(kill) {
+      const m = document.querySelector("#fx .marker");
+      if (!m) return;
+      m.classList.toggle("kill", !!kill);
+      if (m.animate) m.animate([{ opacity: 1, transform: "scale(.55)" }, { opacity: 1, transform: "scale(1)", offset: 0.25 }, { opacity: 0, transform: "scale(1.2)" }], { duration: kill ? 650 : 320, easing: "ease-out" });
+      else this.pulse("marker", 1, kill ? 650 : 320);
+    }
+  };
   function onGunEvent(ev) {
     if (ev.type === "connected" || ev.type === "disconnected") {
       renderGunStatus();
       if (ev.type === "connected" && G.myId && G.phase !== "setup") gunSetup(!(G.phase === "playing" && G.alive));
-      if (ev.type === "connected" && G.phase === "playing" && G.alive) gun.load(G.myId, clipSize());
+      if (ev.type === "connected" && G.phase === "playing" && G.alive && !G.reloading) gun.load(G.myId, clipSize());
       return;
     }
     if (ev.type === "tel") {
       renderLab(ev);
-      if (G.phase === "playing") $("#hudAmmo").textContent = ev.t.ammo;
+      if (G.phase === "playing") {
+        G.ammo = ev.t.ammo;
+        renderAmmo();
+      }
       return;
     }
     if (G.phase !== "playing") return;
     switch (ev.type) {
       case "shot":
-        Sfx.shot();
+        Sfx.shot(gun && gun.type);
         break;
       case "triggerPress":
-        if (G.alive && ev.ammo === 0 && !G.reloading) Sfx.empty();
+        if (G.alive && ev.ammo === 0 && !G.reloading) {
+          Sfx.dry();
+          if (!G.saidReload) {
+            G.saidReload = true;
+            speak("Reload");
+          }
+        }
         break;
       case "reloadPress":
         if (G.alive && !G.reloading) doReload();
@@ -1064,14 +1354,80 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
         break;
     }
   }
+  function reloadMs() {
+    const base = (G.settings.reload === void 0 ? 2 : G.settings.reload) * 1e3;
+    return Math.round(gun && gun.type === "rifle" ? base * 1.25 : base);
+  }
   function doReload() {
+    if (G.reloading || !G.alive || !gun) return;
+    const have = gun.last ? gun.last.ammo : 0;
+    if (have >= clipSize()) {
+      Sfx.click();
+      return;
+    }
+    const ms = reloadMs();
     G.reloading = true;
-    Sfx.reload();
+    G.saidReload = false;
     gun.lock(G.myId);
-    setTimeout(() => {
-      if (G.alive && G.phase === "playing") gun.load(G.myId, clipSize());
-      G.reloading = false;
-    }, 1500);
+    Sfx.magOut();
+    const bar = $("#reloadBar"), fill = bar.firstElementChild;
+    bar.classList.add("on");
+    fill.style.transition = "none";
+    fill.style.width = "0%";
+    void fill.offsetWidth;
+    fill.style.transition = "width " + ms + "ms linear";
+    fill.style.width = "100%";
+    G.reloadTimers = [setTimeout(() => {
+      if (G.reloading) Sfx.magIn();
+    }, ms * 0.6), setTimeout(finishReload, ms)];
+    renderAmmo();
+  }
+  function finishReload() {
+    if (!G.reloading) return;
+    G.reloading = false;
+    G.lowWarned = false;
+    $("#reloadBar").classList.remove("on");
+    if (G.alive && G.phase === "playing") {
+      gun.load(G.myId, clipSize());
+      Sfx.rack();
+      G.ammo = clipSize();
+    }
+    renderAmmo();
+  }
+  function cancelReload() {
+    (G.reloadTimers || []).forEach(clearTimeout);
+    G.reloadTimers = [];
+    G.reloading = false;
+    const bar = $("#reloadBar");
+    if (bar) bar.classList.remove("on");
+  }
+  function renderAmmo() {
+    const clip = clipSize(), a = G.ammo === void 0 ? clip : G.ammo;
+    const box = $("#ammoBox"), pr = $("#hudPrompt");
+    $("#hudAmmo").textContent = G.reloading ? "--" : a;
+    $("#hudClip").textContent = "/ " + clip;
+    const low = a > 0 && a <= Math.ceil(clip * 0.25), empty = a === 0;
+    box.className = "ammo" + (G.reloading ? "" : empty ? " empty" : low ? " low" : "");
+    if (low && !G.lowWarned && G.alive && !G.reloading) {
+      G.lowWarned = true;
+      Sfx.warn();
+    }
+    if (!G.alive || G.phase !== "playing") {
+      pr.textContent = "";
+      pr.className = "prompt";
+    } else if (G.reloading) {
+      pr.textContent = "RELOADING";
+      pr.className = "prompt";
+      pr.style.color = "var(--accent)";
+    } else if (empty) {
+      pr.textContent = "RELOAD";
+      pr.className = "prompt blink";
+      pr.style.color = "";
+    } else {
+      pr.textContent = "";
+      pr.className = "prompt";
+      pr.style.color = "";
+    }
   }
   function cycleFire() {
     const order = (gun == null ? void 0 : gun.type) === "rifle" ? ["auto", "burst", "single"] : ["single", "burst"];
@@ -1088,13 +1444,14 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
   }
   function onHit(h) {
     if (!G.alive) return;
+    if (Date.now() < (G.shieldUntil || 0)) return;
     const now = performance.now();
     if (h.grenade) {
       if (h.msg !== 1) return;
       const k2 = "g" + h.gid;
       if (now - (G.recentHits.get(k2) || 0) < 1500) return;
       G.recentHits.set(k2, now);
-      if (G.settings.gren > 0) damage(G.settings.gren, 0, true);
+      if (G.settings.gren > 0) damage(G.settings.gren, 0, true, h.sensors);
       return;
     }
     if (h.shooter === G.myId) return;
@@ -1103,39 +1460,73 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     G.recentHits.set(k, now);
     const shooter = rosterById(h.shooter);
     if (G.settings.mode === "tdm" && !G.settings.ff && shooter && shooter.team === G.myTeam) return;
-    damage(1, h.shooter, false);
+    damage(1, h.shooter, false, h.sensors);
   }
-  function damage(n, killer, grenade) {
+  const lowLine = () => Math.max(1, Math.ceil(G.settings.health * 0.3));
+  function damage(n, killer, grenade, sensors) {
     G.health = Math.max(0, G.health - n);
-    Sfx.hit();
-    buzz(60);
-    document.body.classList.remove("flash");
-    void document.body.offsetWidth;
-    document.body.classList.add("flash");
-    if (killer) Net.send({ t: "HIT", to: killer });
+    const hurt = 1 - G.health / G.settings.health;
+    if (grenade) Sfx.boom();
+    else Sfx.hit();
+    FX.pulse("hitflash", Math.min(0.95, 0.45 + 0.1 * n + hurt * 0.35), grenade ? 1e3 : 450);
+    if (sensors & 4) FX.pulse("dir-f", 1, 700);
+    if (sensors & 2) FX.pulse("dir-l", 1, 700);
+    if (sensors & 1) FX.pulse("dir-r", 1, 700);
+    if (sensors & 8) FX.pulse("dir-b", 1, 700);
+    buzz(grenade ? [120, 60, 220] : 70);
+    if (killer) Net.send({ t: "HIT", to: killer, kill: G.health <= 0 });
     if (G.health <= 0) die(killer, grenade);
+    else if (prefs.kick && gun) gun.kick(G.myId);
+    document.body.classList.toggle("lowhp", G.alive && G.health <= lowLine());
     renderHud();
   }
   function die(killer, grenade) {
     G.alive = false;
+    cancelReload();
     gun && gun.lock(G.myId);
     const ev = { game: G.gameId, victim: G.myId, seq: ++G.seq, killer: killer || 0, grenade: !!grenade, t: Date.now() };
     addEvent(ev);
     Net.send({ t: "DEATH", ev });
     G.respawnAt = Date.now() + G.settings.respawn * 1e3;
+    document.body.classList.remove("lowhp", "shield");
+    document.body.classList.add("dead");
+    $("#killedBy").textContent = grenade ? "by a grenade" : killer ? "by " + nameOf(killer) : "";
     Sfx.death();
-    buzz([200, 80, 200]);
-    speak(grenade ? "Grenade. You're out." : killer ? "Eliminated by " + nameOf(killer) : "Eliminated");
+    buzz([220, 90, 220, 90, 400]);
+    if (prefs.kick && gun) {
+      gun.kick(G.myId);
+      setTimeout(() => gun.kick(G.myId), 260);
+      setTimeout(() => gun.kick(G.myId), 520);
+    }
+    speak(grenade ? "Grenade. You're out." : killer ? "Eliminated by " + nameOf(killer) : "Eliminated", true);
+    renderAmmo();
   }
   function respawn() {
     G.alive = true;
     G.health = G.settings.health;
-    G.reloading = false;
+    G.lowWarned = false;
+    G.saidReload = false;
+    G.shieldUntil = Date.now() + (G.settings.shield || 0) * 1e3;
+    document.body.classList.remove("dead", "lowhp");
+    if (G.settings.shield > 0) document.body.classList.add("shield");
     gun && gun.load(G.myId, clipSize());
+    G.ammo = clipSize();
     Sfx.respawn();
-    speak("Back in");
+    FX.pulse("heal", 1, 800);
+    speak(G.settings.shield > 0 ? "Back in. Shield up." : "Back in", true);
     renderHud();
+    renderAmmo();
   }
+  function myStreak() {
+    const evs = [...G.events.values()].sort((x, y) => x.t - y.t);
+    let n = 0;
+    for (const e of evs) {
+      if (e.victim === G.myId) n = 0;
+      else if (e.killer === G.myId) n++;
+    }
+    return n;
+  }
+  const STREAK_LINES = { 2: "Double kill", 3: "Triple kill", 5: "Rampage", 7: "Unstoppable", 10: "Legendary" };
   function addEvent(ev) {
     const k = ev.victim + ":" + ev.seq;
     if (G.events.has(k)) return;
@@ -1144,18 +1535,40 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     const txt = ev.grenade ? `${nameOf(ev.victim)} caught a grenade` : ev.killer ? `${nameOf(ev.killer)} tagged out ${nameOf(ev.victim)}` : `${nameOf(ev.victim)} is out`;
     G.feed.unshift(txt);
     G.feed.length = Math.min(G.feed.length, 6);
-    if (ev.killer === G.myId && ev.victim !== G.myId) {
-      speak("Kill");
+    const fresh = G.phase === "playing" && Date.now() - ev.t < 6e3;
+    if (fresh && ev.killer === G.myId && ev.victim !== G.myId) {
+      Sfx.kill();
+      FX.marker(true);
+      buzz([30, 40, 30]);
+      const st = myStreak();
+      speak(STREAK_LINES[st] || "Kill", !!STREAK_LINES[st]);
     }
     store.set("game", { gameId: G.gameId, seq: G.seq, events: [...G.events.values()] });
     renderScore();
     renderHud();
+    const s = computeScore();
+    if (fresh) announceLead(s);
     const lim = G.settings.kills;
     if (lim > 0 && G.phase === "playing") {
-      const s = computeScore();
       const top = G.settings.mode === "tdm" ? Math.max(s.teams.A, s.teams.B) : Math.max(0, ...Object.values(s.kills));
       if (top >= lim) endMatch("Kill limit reached");
     }
+  }
+  function announceLead(s) {
+    let leader = null;
+    if (G.settings.mode === "tdm") {
+      leader = s.teams.A > s.teams.B ? "A" : s.teams.B > s.teams.A ? "B" : null;
+      if (leader && leader !== G.leader) speak(teamName(leader) + " team takes the lead");
+    } else {
+      const best = Math.max(0, ...Object.values(s.kills));
+      const tops = Object.keys(s.kills).filter((id) => s.kills[id] === best && best > 0);
+      leader = tops.length === 1 ? +tops[0] : null;
+      if (leader !== G.leader) {
+        if (leader === G.myId) speak("You took the lead");
+        else if (G.leader === G.myId) speak("You lost the lead");
+      }
+    }
+    G.leader = leader;
   }
   function computeScore() {
     var _a, _b;
@@ -1178,11 +1591,26 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     if (G.phase === "ended") return;
     G.phase = "ended";
     G.endedGame = G.gameId;
+    cancelReload();
     gun && gun.lock(G.myId);
-    Sfx.end();
-    speak("Match over");
+    document.body.classList.remove("dead", "lowhp", "shield");
+    const s = computeScore();
+    let line, won = false;
+    if (G.settings.mode === "tdm") {
+      const mine = s.teams[G.myTeam], theirs = s.teams[G.myTeam === "A" ? "B" : "A"];
+      won = mine > theirs;
+      line = mine === theirs ? "Draw" : won ? "Victory" : "Defeat";
+    } else {
+      const best = Math.max(0, ...Object.values(s.kills));
+      const tops = Object.keys(s.kills).filter((id) => s.kills[id] === best);
+      won = best > 0 && tops.length === 1 && +tops[0] === G.myId;
+      line = won ? "You win" : tops.length === 1 && best > 0 ? nameOf(+tops[0]) + " wins" : "Match over";
+    }
+    if (won) Sfx.win();
+    else Sfx.lose();
+    speak(line, true);
     sendHeartbeat();
-    toast(reason || "Match over");
+    toast((reason ? reason + ". " : "") + line);
     renderFinal();
     show("end");
   }
@@ -1197,14 +1625,17 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       if (left <= 3 && left > 0 && left !== lastBeep) {
         lastBeep = left;
         Sfx.beep();
+        speak(String(left), true);
       }
       if (now >= G.startAt) {
         G.phase = "playing";
         lastBeep = 0;
         gun && gun.load(G.myId, clipSize());
+        G.ammo = clipSize();
         Sfx.go();
-        speak("Go");
+        speak("Go", true);
         renderHud();
+        renderAmmo();
       }
     }
     if (G.phase === "playing") {
@@ -1215,7 +1646,32 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
         sendHeartbeat();
       }
       renderClock();
-      if (!G.alive) $("#hudRespawn").textContent = Math.max(0, Math.ceil((G.respawnAt - now) / 1e3));
+      const left = Math.ceil((G.endAt - now) / 1e3);
+      if (!G.said60 && G.settings.time > 1 && left <= 60) {
+        G.said60 = true;
+        speak("One minute remaining");
+      }
+      if (left <= 10 && left > 0 && left !== G.lastTickSec) {
+        G.lastTickSec = left;
+        Sfx.tick();
+      }
+      if (!G.alive) {
+        const r = Math.max(0, Math.ceil((G.respawnAt - now) / 1e3));
+        $("#hudRespawn").textContent = r;
+        if (r <= 3 && r > 0 && r !== G.lastRespawnTick) {
+          G.lastRespawnTick = r;
+          Sfx.tick();
+        }
+      }
+      if (G.alive && G.shieldUntil && now >= G.shieldUntil) {
+        G.shieldUntil = 0;
+        document.body.classList.remove("shield");
+        Sfx.shieldOff();
+      }
+      if (G.alive && G.health <= lowLine() && now - (G.lastBeat || 0) > 1100) {
+        G.lastBeat = now;
+        Sfx.heartbeat();
+      }
     }
     if (G.phase === "ended" && now - lastHb > 3e3 && now < G.endAt + 12e4) {
       lastHb = now;
@@ -1265,6 +1721,10 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
   }
   function show(view) {
     for (const v of ["setup", "lobby", "game", "end"]) $("#v-" + v).style.display = v === view ? "" : "none";
+    try {
+      window.scrollTo(0, 0);
+    } catch (e) {
+    }
     if (view !== "game" && G.phase === "setup") setNet(false);
   }
   function renderGunStatus() {
@@ -1298,7 +1758,7 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     $("#btnStart").style.display = canEdit ? "" : "none";
     const s = G.settings;
     $("#rulesView").innerHTML = `${s.mode === "tdm" ? "Team deathmatch" : "Free-for-all"} \xB7 ${IR_MODES[s.arena].label} \xB7 ${s.time} min \xB7 ${s.kills || "no"} kill limit<br>
-    ${s.health} health \xB7 ${s.respawn}s respawn \xB7 grenade ${s.gren} \xB7 friendly fire ${s.ff ? "on" : "off"}`;
+    ${s.health} health \xB7 ${s.respawn}s respawn \xB7 ${s.reload}s reload \xB7 ${s.shield}s spawn shield \xB7 grenade ${s.gren} \xB7 friendly fire ${s.ff ? "on" : "off"}`;
     writeRulesForm();
   }
   function writeRulesForm() {
@@ -1312,6 +1772,8 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     $("#s-gren").value = s.gren;
     $("#s-ff").value = s.ff ? "1" : "0";
     $("#s-marker").checked = !!s.marker;
+    $("#s-reload").value = s.reload;
+    $("#s-shield").value = s.shield;
   }
   function readRulesForm() {
     const n = (id, lo, hi, d) => {
@@ -1327,7 +1789,9 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       respawn: n("#s-respawn", 0, 120, 10),
       gren: n("#s-gren", 0, 99, 4),
       ff: $("#s-ff").value === "1",
-      marker: $("#s-marker").checked
+      marker: $("#s-marker").checked,
+      reload: ((v) => isNaN(v) ? 2 : Math.max(0, Math.min(10, v)))(parseFloat($("#s-reload").value)),
+      shield: n("#s-shield", 0, 10, 3)
     };
     store.set("settings", G.settings);
     if (G.host) publishRoster();
@@ -1340,15 +1804,18 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
       st.textContent = G.alive ? "ALIVE" : "OUT";
       st.className = "state " + (G.alive ? "alive" : "dead");
     }
-    $("#hudRespawn").style.display = G.alive ? "none" : "";
-    const pct = Math.max(0, G.health / G.settings.health * 100);
-    const bar = $("#hpBar");
-    bar.style.width = pct + "%";
-    bar.className = pct <= 30 ? "low" : "";
+    const max = G.settings.health, segs = Math.min(max, 20), filled = Math.round(G.health / max * segs);
+    const hp = $("#hpBar");
+    if (hp.children.length !== segs) hp.innerHTML = "<i></i>".repeat(segs);
+    [...hp.children].forEach((el, i) => el.classList.toggle("gone", i >= filled));
+    hp.className = "hp" + (G.alive && G.health <= lowLine() ? " low" : "");
     $("#hudTeam").innerHTML = `#${G.myId} ${esc(me.name)} ` + (G.settings.mode === "tdm" ? `<span class="pill ${G.myTeam}">${teamName(G.myTeam)}</span>` : "");
     const s = computeScore();
     $("#hudKills").textContent = s.kills[G.myId] || 0;
     $("#hudDeaths").textContent = s.deaths[G.myId] || 0;
+    const streak = myStreak();
+    $("#hudStreak").textContent = streak;
+    $("#hudStreak").className = streak >= 3 ? "hot" : "";
     $("#feed").innerHTML = G.feed.map((f) => `<div>${esc(f)}</div>`).join("") || `<div>No tags yet</div>`;
     $("#btnEnd").style.display = G.host || G.offline ? "" : "none";
     $("#simShooter").innerHTML = Array.from({ length: 12 }, (_, i) => i + 1).filter((i) => i !== G.myId).map((i) => `<option>${i}</option>`).join("");
@@ -1515,7 +1982,45 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Menlo,m
     renderLobby();
   };
   $("#joinCode").value = store.get("room", "");
-  ["#s-mode", "#s-arena", "#s-time", "#s-kills", "#s-health", "#s-respawn", "#s-gren", "#s-ff", "#s-marker"].forEach((id) => $(id).onchange = readRulesForm);
+  $("#vol").value = Math.round(prefs.vol * 100);
+  $("#vol").oninput = (e) => {
+    Sfx.unlock();
+    Sfx.setVol(e.target.value / 100);
+  };
+  $("#vol").onchange = () => {
+    Sfx.unlock();
+    Sfx.marker();
+  };
+  $("#optVoice").checked = prefs.voice;
+  $("#optVoice").onchange = (e) => {
+    prefs.voice = e.target.checked;
+    store.set("voice", prefs.voice);
+  };
+  $("#optKick").checked = prefs.kick;
+  $("#optKick").onchange = (e) => {
+    prefs.kick = e.target.checked;
+    store.set("kick", prefs.kick);
+  };
+  $("#btnTestSfx").onclick = () => {
+    Sfx.unlock();
+    const seq = [
+      [0, () => Sfx.shot("pistol")],
+      [250, () => Sfx.shot("rifle")],
+      [700, () => Sfx.marker()],
+      [1e3, () => Sfx.hit()],
+      [1300, () => FX.pulse("hitflash", 0.8, 450)],
+      [1700, () => Sfx.magOut()],
+      [2300, () => Sfx.magIn()],
+      [2800, () => Sfx.rack()],
+      [3300, () => {
+        Sfx.kill();
+        FX.marker(true);
+      }],
+      [3900, () => speak("Sound check. Double kill.", true)]
+    ];
+    seq.forEach((step) => setTimeout(step[1], step[0]));
+  };
+  ["#s-mode", "#s-arena", "#s-time", "#s-kills", "#s-health", "#s-respawn", "#s-gren", "#s-ff", "#s-marker", "#s-reload", "#s-shield"].forEach((id) => $(id).onchange = readRulesForm);
   $("#roster").onclick = (e) => {
     if (!G.host || G.settings.mode !== "tdm") return;
     const row = e.target.closest("[data-cid]");
