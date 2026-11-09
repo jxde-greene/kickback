@@ -144,7 +144,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
 <header>
   <span class="net" id="netDot" title="network"></span>
   <h1>KICK<b>BACK</b></h1>
-  <span id="ver">v0.6 loading…</span>
+  <span id="ver">v0.7 loading…</span>
   <nav class="tabs">
     <button data-tab="play" class="on">Play</button>
     <button data-tab="lab">Gun Lab</button>
@@ -225,6 +225,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
           <div><label>Friendly fire</label><select id="s-ff"><option value="0">Off</option><option value="1">On</option></select></div>
           <div><label>Reload time (sec)</label><input id="s-reload" type="number" min="0" max="10" step="0.5"></div>
           <div><label>Spawn shield (sec)</label><input id="s-shield" type="number" min="0" max="10"></div>
+          <div><label>Grenade blast (sec, 0 = one hit)</label><input id="s-grenwin" type="number" min="0" max="45"></div>
         </div>
         <label><input type="checkbox" id="s-marker" style="width:auto"> Hit-marker sound for shooters</label>
       </div>
@@ -339,7 +340,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
 <script id="kbMain">
 "use strict";
 (() => {
-  const VERSION = "v0.6";
+  const VERSION = "v0.7";
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
   const esc = (s) => String(s != null ? s : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -1028,7 +1029,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && G.phase !== "setup") keepAwake();
   });
-  const DEFAULTS = { mode: "ffa", arena: "hybrid", time: 10, kills: 15, health: 10, respawn: 10, gren: 4, ff: false, marker: true, reload: 2, shield: 3 };
+  const DEFAULTS = { mode: "ffa", arena: "hybrid", time: 10, kills: 15, health: 10, respawn: 10, gren: 10, ff: false, marker: true, reload: 2, shield: 3, grenWin: 0 };
   const me = { cid: store.get("cid", null) || Math.random().toString(36).slice(2, 10), name: store.get("name", "") };
   store.set("cid", me.cid);
   const G = {
@@ -1040,7 +1041,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     hostCid: null,
     roster: [],
     // {cid, name, gun, id, team}
-    settings: { ...DEFAULTS, ...store.get("settings", {}) },
+    settings: { ...DEFAULTS, ...store.get("settings7", {}) },
     gameId: null,
     startAt: 0,
     endAt: 0,
@@ -1262,6 +1263,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     G.events = /* @__PURE__ */ new Map();
     G.feed = [];
     G.recentHits.clear();
+    G.blasts = {};
     if (saved && saved.gameId === gameId) for (const e of saved.events || []) G.events.set(e.victim + ":" + e.seq, e);
     G.health = G.settings.health;
     G.alive = true;
@@ -1448,9 +1450,13 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     const now = performance.now();
     if (h.grenade) {
       if (h.msg !== 1) return;
-      const k2 = "g" + h.gid;
-      if (now - (G.recentHits.get(k2) || 0) < 1500) return;
-      G.recentHits.set(k2, now);
+      const b = G.blasts[h.gid] || (G.blasts[h.gid] = { first: 0, last: 0, hitAt: 0 });
+      if (now - b.last > 6e3) b.first = now;
+      b.last = now;
+      const win = (G.settings.grenWin === void 0 ? 0 : G.settings.grenWin) * 1e3;
+      if (win === 0 ? b.hitAt >= b.first : now - b.first > win) return;
+      if (now - b.hitAt < 1500) return;
+      b.hitAt = now;
       if (G.settings.gren > 0) damage(G.settings.gren, 0, true, h.sensors);
       return;
     }
@@ -1758,7 +1764,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     $("#btnStart").style.display = canEdit ? "" : "none";
     const s = G.settings;
     $("#rulesView").innerHTML = `${s.mode === "tdm" ? "Team deathmatch" : "Free-for-all"} \xB7 ${IR_MODES[s.arena].label} \xB7 ${s.time} min \xB7 ${s.kills || "no"} kill limit<br>
-    ${s.health} health \xB7 ${s.respawn}s respawn \xB7 ${s.reload}s reload \xB7 ${s.shield}s spawn shield \xB7 grenade ${s.gren} \xB7 friendly fire ${s.ff ? "on" : "off"}`;
+    ${s.health} health \xB7 ${s.respawn}s respawn \xB7 ${s.reload}s reload \xB7 ${s.shield}s spawn shield \xB7 grenade ${s.gren} dmg for ${s.grenWin ? s.grenWin + "s" : "one hit"} \xB7 friendly fire ${s.ff ? "on" : "off"}`;
     writeRulesForm();
   }
   function writeRulesForm() {
@@ -1774,6 +1780,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     $("#s-marker").checked = !!s.marker;
     $("#s-reload").value = s.reload;
     $("#s-shield").value = s.shield;
+    $("#s-grenwin").value = s.grenWin;
   }
   function readRulesForm() {
     const n = (id, lo, hi, d) => {
@@ -1791,9 +1798,10 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
       ff: $("#s-ff").value === "1",
       marker: $("#s-marker").checked,
       reload: ((v) => isNaN(v) ? 2 : Math.max(0, Math.min(10, v)))(parseFloat($("#s-reload").value)),
-      shield: n("#s-shield", 0, 10, 3)
+      shield: n("#s-shield", 0, 10, 3),
+      grenWin: n("#s-grenwin", 0, 45, 3)
     };
-    store.set("settings", G.settings);
+    store.set("settings7", G.settings);
     if (G.host) publishRoster();
     renderLobby();
   }
@@ -2020,7 +2028,7 @@ input[type=range]{padding:0;height:34px;background:none;border:0}
     ];
     seq.forEach((step) => setTimeout(step[1], step[0]));
   };
-  ["#s-mode", "#s-arena", "#s-time", "#s-kills", "#s-health", "#s-respawn", "#s-gren", "#s-ff", "#s-marker", "#s-reload", "#s-shield"].forEach((id) => $(id).onchange = readRulesForm);
+  ["#s-mode", "#s-arena", "#s-time", "#s-kills", "#s-health", "#s-respawn", "#s-gren", "#s-ff", "#s-marker", "#s-reload", "#s-shield", "#s-grenwin"].forEach((id) => $(id).onchange = readRulesForm);
   $("#roster").onclick = (e) => {
     if (!G.host || G.settings.mode !== "tdm") return;
     const row = e.target.closest("[data-cid]");
